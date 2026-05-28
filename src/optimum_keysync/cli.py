@@ -269,6 +269,13 @@ def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, Billin
 
     try:
         current = _list_with_retry(billing, auth, cfg)
+    except AuthError as e:
+        # _list_with_retry can re-exchange on scope_changed; the second
+        # exchange may surface a different AuthError (revoked between runs,
+        # auth service degraded, …). Without this branch, the AuthError
+        # would crash the process instead of producing a clean EXIT_AUTH.
+        _LOG.error("auth re-exchange during list failed", error=str(e))
+        sys.exit(EXIT_AUTH)
     except BillingError as e:
         _LOG.error("billing list call failed", error=str(e))
         sys.exit(EXIT_BILLING)

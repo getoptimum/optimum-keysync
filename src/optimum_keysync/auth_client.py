@@ -137,8 +137,12 @@ class AuthClient:
                 access_token,
                 options={"verify_signature": False, "verify_exp": True},
             )
-        except jwt.ExpiredSignatureError as e:
-            raise AuthError(f"optimum-auth returned an already-expired JWT: {e}") from e
+        except jwt.InvalidTokenError as e:
+            # ExpiredSignatureError, DecodeError, MissingRequiredClaimError,
+            # and friends all inherit from InvalidTokenError. Catch the base
+            # so a malformed/tampered/expired JWT all surface as AuthError
+            # rather than leaking PyJWT's internal exception hierarchy.
+            raise AuthError(f"optimum-auth returned an invalid JWT: {e}") from e
         operator_id = claims.get("operator_id")
         if not isinstance(operator_id, str) or not operator_id:
             raise AuthError(

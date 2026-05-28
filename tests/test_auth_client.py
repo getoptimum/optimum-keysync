@@ -114,7 +114,7 @@ def test_already_expired_jwt_rejected_at_exchange() -> None:
         )
     )
     c = AuthClient(AUTH_URL, "ovi_live_test")
-    with pytest.raises(AuthError, match="already-expired"):
+    with pytest.raises(AuthError, match="invalid JWT"):
         c.token()
 
 
