@@ -13,11 +13,7 @@ import httpx
 import pytest
 import respx
 
-from optimum_keysync.billing_client import (
-    BillingClient,
-    BillingError,
-)
-from optimum_keysync.billing_client import _RetryableBillingError as RetryableBillingError
+from optimum_keysync.billing_client import BillingClient, BillingError
 
 BILLING_URL = "https://billing.test"
 
@@ -45,11 +41,11 @@ def test_sustained_429_surfaces_billing_error_after_retries() -> None:
         return_value=httpx.Response(429, text="still slow")
     )
     c = BillingClient(BILLING_URL)
-    # tenacity reraise=True re-throws the original exception after
-    # retries exhaust. 429 raises the (module-private) RetryableBillingError;
-    # importing it explicitly here makes the contract testable without
-    # widening the public surface.
-    with pytest.raises(RetryableBillingError):
+    # The public BillingClient contract is: callers ever see BillingError
+    # (or ScopeChangedError). _RetryableBillingError is an implementation
+    # detail for tenacity. Sustained 429 must surface as the wrapped
+    # BillingError, never leak the private class.
+    with pytest.raises(BillingError, match="billing failed after retries"):
         c.list_validators("42", "mainnet", "jwt")
 
 

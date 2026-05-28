@@ -85,7 +85,7 @@ class BillingClient:
         bearer: str,
     ) -> list[ValidatorAssignment]:
         url = f"{self._billing_url}/api/v1/operators/{operator_id}/validators"
-        resp = self._do("GET", url, bearer=bearer, params={"network": network})
+        resp = self._call("GET", url, bearer=bearer, params={"network": network})
         body = resp.json()
         # Server returns ValidatorsListResponse — extract the assignments.
         raw = body.get("assignments")
@@ -127,7 +127,7 @@ class BillingClient:
                 ],
             }
             url = f"{self._billing_url}/api/v1/validator-keys/batch"
-            resp = self._do("POST", url, bearer=bearer, json=payload)
+            resp = self._call("POST", url, bearer=bearer, json=payload)
             body = resp.json()
             added += int(body.get("added", 0))
             skipped += int(body.get("skipped", 0))
@@ -148,7 +148,7 @@ class BillingClient:
             ],
         }
         url = f"{self._billing_url}/api/v1/operators/{operator_id}/validators"
-        self._do("POST", url, bearer=bearer, json=payload)
+        self._call("POST", url, bearer=bearer, json=payload)
 
     def unassign_validator(
         self,
@@ -161,7 +161,7 @@ class BillingClient:
             f"{self._billing_url}/api/v1/operators/{operator_id}/validators/"
             f"{validator_index}"
         )
-        self._do(
+        self._call(
             "DELETE",
             url,
             bearer=bearer,
@@ -169,6 +169,29 @@ class BillingClient:
         )
 
     # ── Internals ─────────────────────────────────────────────────────────
+
+    def _call(
+        self,
+        method: str,
+        url: str,
+        *,
+        bearer: str,
+        params: Mapping[str, str] | None = None,
+        json: Mapping[str, Any] | None = None,
+    ) -> httpx.Response:
+        """Public-error-envelope wrapper around the retry-decorated _do.
+
+        tenacity's reraise=True re-throws the original _RetryableBillingError
+        once attempts exhaust. Callers contract on BillingError as the public
+        unrecoverable-error type, so re-wrap here at the BillingClient
+        boundary. Without this, the CLI's `except BillingError` handler
+        misses sustained 429/5xx and the process dies on an uncaught
+        _RetryableBillingError instead of exiting cleanly with EXIT_BILLING.
+        """
+        try:
+            return self._do(method, url, bearer=bearer, params=params, json=json)
+        except _RetryableBillingError as e:
+            raise BillingError(f"billing failed after retries: {e}") from e
 
     @tenacity.retry(
         retry=tenacity.retry_if_exception_type(
