@@ -113,6 +113,24 @@ def test_pubkeys_file_skips_blank_and_comment_lines(tmp_path: Path) -> None:
     # asserts what was passed; the unit boundary here is the file parse.
 
 
+def test_beacon_normalise_rejects_non_hex_pubkey(tmp_path: Path) -> None:
+    """A typo'd pubkey (non-hex char) must fail at the trust boundary,
+    not silently propagate to the beacon node."""
+    from optimum_keysync.beacon_client import BeaconClient
+
+    bc = BeaconClient("https://beacon.example.com")
+    with pytest.raises(ValueError, match="not valid hex"):
+        bc._normalise("0x" + "z" * 96)
+
+
+def test_beacon_normalise_rejects_wrong_length() -> None:
+    from optimum_keysync.beacon_client import BeaconClient
+
+    bc = BeaconClient("https://beacon.example.com")
+    with pytest.raises(ValueError, match="unexpected length"):
+        bc._normalise("0x" + "a" * 50)
+
+
 def test_desired_set_dedup_is_idempotent() -> None:
     a = DesiredValidator(
         validator_index=1, chain_id="0x1", validator_key="0xk", owner_name="x"

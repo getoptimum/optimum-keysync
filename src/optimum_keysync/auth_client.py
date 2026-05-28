@@ -124,10 +124,21 @@ class AuthClient:
         if not isinstance(access_token, str) or not isinstance(expires_in, int):
             raise AuthError(f"malformed response from optimum-auth: {body!r}")
 
-        # Decode without verification — we just minted it and trust the source.
-        # Billing re-verifies the signature on every call, so an attacker who
-        # corrupted this JWT in flight would fail downstream anyway.
-        claims = jwt.decode(access_token, options={"verify_signature": False})
+        # Decode without signature verification — we just minted it and
+        # trust the source. Billing re-verifies the signature on every
+        # call. We DO verify exp here defensively: if optimum-auth ever
+        # served a stale or replayed response (e.g. a cached 200 from a
+        # broken CDN config), an already-expired JWT slipping past our
+        # cache window would only fail at the first billing call. Failing
+        # at exchange time gives a clearer error and avoids a wasted
+        # round-trip.
+        try:
+            claims = jwt.decode(
+                access_token,
+                options={"verify_signature": False, "verify_exp": True},
+            )
+        except jwt.ExpiredSignatureError as e:
+            raise AuthError(f"optimum-auth returned an already-expired JWT: {e}") from e
         operator_id = claims.get("operator_id")
         if not isinstance(operator_id, str) or not operator_id:
             raise AuthError(

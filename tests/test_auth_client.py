@@ -92,6 +92,32 @@ def test_invalidate_forces_re_exchange() -> None:
     assert route.call_count == 2
 
 
+@respx.mock
+def test_already_expired_jwt_rejected_at_exchange() -> None:
+    """Defense in depth: an expired JWT slipping past a misbehaving
+    optimum-auth (cached 200, replayed body, …) must fail at exchange
+    rather than at the first billing call."""
+    expired = jwt.encode(
+        {"sub": "k", "operator_id": "42", "exp": int(time.time()) - 60},
+        "s",
+        algorithm="HS256",
+    )
+    respx.post(AUTH_URL + TOKEN_PATH).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": expired,
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "validator_indexes": [],
+            },
+        )
+    )
+    c = AuthClient(AUTH_URL, "ovi_live_test")
+    with pytest.raises(AuthError, match="already-expired"):
+        c.token()
+
+
 def test_operator_token_is_expiring_predicate() -> None:
     from optimum_keysync.auth_client import OperatorToken
 

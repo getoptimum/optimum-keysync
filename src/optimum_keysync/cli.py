@@ -20,7 +20,7 @@ from pathlib import Path
 import click
 
 from optimum_keysync.auth_client import AuthClient, AuthError
-from optimum_keysync.beacon_client import BeaconClient
+from optimum_keysync.beacon_client import BeaconClient, BeaconError
 from optimum_keysync.billing_client import (
     BillingClient,
     BillingError,
@@ -244,7 +244,12 @@ def _build_token_and_billing(
 
 
 def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, BillingClient]:
-    auth, billing = _build_token_and_billing(cfg)
+    try:
+        auth, billing = _build_token_and_billing(cfg)
+    except AuthError as e:
+        _LOG.error("token exchange failed", error=str(e))
+        sys.exit(EXIT_AUTH)
+
     beacon = BeaconClient(cfg.beacon_url) if cfg.beacon_url else None
     try:
         desired = resolve_desired(
@@ -255,10 +260,18 @@ def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, Billin
             beacon=beacon,
         )
     except ValueError as e:
+        # Pubkey hex/length validation, indices-file parsing errors, etc.
         _LOG.error("desired-state resolution failed", error=str(e))
         sys.exit(EXIT_CONFIG)
+    except BeaconError as e:
+        _LOG.error("beacon node call failed", error=str(e))
+        sys.exit(EXIT_BEACON)
 
-    current = _list_with_retry(billing, auth, cfg)
+    try:
+        current = _list_with_retry(billing, auth, cfg)
+    except BillingError as e:
+        _LOG.error("billing list call failed", error=str(e))
+        sys.exit(EXIT_BILLING)
     return plan(desired, current), auth, billing
 
 
