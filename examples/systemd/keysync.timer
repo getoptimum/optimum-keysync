@@ -1,0 +1,14 @@
+[Unit]
+Description=Run optimum-keysync hourly
+After=network-online.target
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1h
+# Persistent so a missed run (e.g. host was offline) fires once on boot.
+Persistent=true
+RandomizedDelaySec=60s
+Unit=keysync.service
+
+[Install]
+WantedBy=timers.target

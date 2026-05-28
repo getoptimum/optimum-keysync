@@ -1,0 +1,23 @@
+[Unit]
+Description=Optimum keysync — reconcile operator validator assignments
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/optimum/keysync.env
+ExecStart=/usr/local/bin/keysync sync --apply
+# Hard stop after 10 minutes — a healthy reconcile finishes in < 30s for
+# operators with < 10k validators. Anything longer is a hung beacon or
+# billing call worth giving up on rather than overrunning the next tick.
+TimeoutStartSec=600
+User=optimum
+Group=optimum
+
+# Hardening — operator credentials live in /etc/optimum, no other paths
+# need to be writable.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=

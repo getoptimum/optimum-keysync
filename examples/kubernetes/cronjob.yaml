@@ -1,0 +1,40 @@
+# Example k8s CronJob running optimum-keysync hourly. Configure
+# KEYSYNC_API_KEY via a Secret; everything else can be ConfigMap values.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: optimum-keysync
+  namespace: optimum
+spec:
+  schedule: "0 * * * *"           # hourly
+  concurrencyPolicy: Forbid       # never run two reconciles in parallel
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 600
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: keysync
+              image: ghcr.io/getoptimum/optimum-keysync:0.1.0
+              args: ["sync", "--apply", "--log-format", "json"]
+              envFrom:
+                - configMapRef:
+                    name: optimum-keysync-config   # KEYSYNC_AUTH_URL, BILLING_URL, NETWORK, CHAIN_ID, OWNER_NAME, BEACON_URL
+                - secretRef:
+                    name: optimum-keysync-secret   # KEYSYNC_API_KEY
+              volumeMounts:
+                - name: pubkeys
+                  mountPath: /etc/optimum/validators.pubkeys
+                  subPath: validators.pubkeys
+                  readOnly: true
+              env:
+                - name: KEYSYNC_PUBKEYS_FILE
+                  value: /etc/optimum/validators.pubkeys
+          volumes:
+            - name: pubkeys
+              configMap:
+                name: optimum-keysync-pubkeys
