@@ -15,8 +15,9 @@ cached JWT, re-exchanges, and retries.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 import tenacity
@@ -183,8 +184,8 @@ class BillingClient:
         url: str,
         *,
         bearer: str,
-        params: dict[str, str] | None = None,
-        json: dict[str, object] | None = None,
+        params: Mapping[str, str] | None = None,
+        json: Mapping[str, Any] | None = None,
     ) -> httpx.Response:
         resp = self._client.request(
             method,

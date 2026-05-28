@@ -16,7 +16,6 @@ from __future__ import annotations
 import json as _json
 import sys
 from pathlib import Path
-from typing import Sequence
 
 import click
 
@@ -30,7 +29,8 @@ from optimum_keysync.billing_client import (
 )
 from optimum_keysync.config import KeysyncConfig, from_env
 from optimum_keysync.desired_state import resolve as resolve_desired
-from optimum_keysync.logging import configure as configure_logging, get_logger
+from optimum_keysync.logging import configure as configure_logging
+from optimum_keysync.logging import get_logger
 from optimum_keysync.reconcile import ReconcilePlan, plan
 
 _LOG = get_logger(__name__)

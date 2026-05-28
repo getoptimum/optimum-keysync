@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from optimum_keysync.beacon_client import BeaconClient, BeaconValidator
+from optimum_keysync.beacon_client import BeaconValidator
 from optimum_keysync.desired_state import DesiredSet, DesiredValidator, resolve
 
 

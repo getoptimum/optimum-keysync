@@ -50,4 +50,6 @@ def configure(level: str = "INFO", fmt: LogFormat = "console") -> None:
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
-    return structlog.get_logger(name)
+    # structlog.get_logger returns Any; the cast pins it to BoundLogger so
+    # callers get autocomplete + type-checking on .info/.error/etc.
+    return structlog.get_logger(name)  # type: ignore[no-any-return]

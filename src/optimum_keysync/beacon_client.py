@@ -21,8 +21,8 @@ We skip anything else (e.g. `withdrawal_*`).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import httpx
 import tenacity
@@ -112,7 +112,9 @@ class BeaconClient:
         reraise=True,
     )
     def _fetch_chunk(self, pubkeys: Sequence[str]) -> list[BeaconValidator]:
-        params = [("id", pk) for pk in pubkeys]
+        params: list[tuple[str, str | int | float | bool | None]] = [
+            ("id", pk) for pk in pubkeys
+        ]
         url = self._beacon_url + "/eth/v1/beacon/states/head/validators"
         resp = self._client.get(url, params=params)
         if 500 <= resp.status_code < 600:

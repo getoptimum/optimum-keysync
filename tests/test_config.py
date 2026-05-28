@@ -8,7 +8,6 @@ import pytest
 
 from optimum_keysync.config import KeysyncConfig, from_env
 
-
 _BASE: dict[str, str | Path] = {
     "auth_url": "https://auth.example",
     "billing_url": "https://billing.example",

@@ -9,8 +9,7 @@ import jwt
 import pytest
 import respx
 
-from optimum_keysync.auth_client import AuthClient, AuthError, TOKEN_PATH
-
+from optimum_keysync.auth_client import TOKEN_PATH, AuthClient, AuthError
 
 AUTH_URL = "https://auth.test"
 
