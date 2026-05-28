@@ -29,10 +29,20 @@ def _require_https(name: str, url: str) -> None:
     exchange and a short-lived JWT on every billing call. A mistyped
     `http://billing.getoptimum.io` would silently send both in plaintext.
     Fail-fast at startup so a misconfigured cron doesn't quietly leak.
+
+    We also refuse any URL carrying userinfo (`http://user:pass@host`).
+    The `ovi_live_*` is the credential — embedding additional creds in
+    the URL is bad hygiene and tools tend to log full URLs at debug
+    level, leaking whatever was put there.
     """
     if not url:
         return
     parts = urlsplit(url)
+    if parts.username is not None or parts.password is not None:
+        raise ValueError(
+            f"{name} must not embed userinfo (user:pass@host); the operator "
+            f"API key is the only credential this CLI presents."
+        )
     if parts.scheme == "https":
         return
     if parts.scheme == "http" and (parts.hostname or "") in _PLAINTEXT_OK_HOSTS:

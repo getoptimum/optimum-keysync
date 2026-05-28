@@ -326,23 +326,51 @@ def _apply_plan(
             token = auth.token()
             return action(token.access_token, token.operator_id)
 
-    if p.to_register:
-        added, skipped = with_token(
-            lambda bearer, _op: billing.batch_register_keys(p.to_register, bearer)
-        )
-        _LOG.info("registered keys", added=added, skipped=skipped)
-
-    if p.to_assign:
-        with_token(
-            lambda bearer, op: billing.assign_validators(op, p.to_assign, bearer)
-        )
-        _LOG.info("assigned validators", count=len(p.to_assign))
-
-    if p.to_unassign:
-        for idx, cid in p.to_unassign:
-            with_token(
-                lambda bearer, op, idx=idx, cid=cid: billing.unassign_validator(
-                    op, idx, cid, bearer
-                )
+    # Track progress across the three stages so a failure mid-apply (e.g.
+    # billing 5xx after register succeeded) tells the operator exactly
+    # which stages landed. Without this, a partial reconcile looks like a
+    # full failure from logs and the next cron run is harder to reason
+    # about. Each stage is idempotent server-side (register dedups on
+    # conflict, assign is filtered by current set, unassign is per-row)
+    # so a re-run picks up where we left off; the log line documents that.
+    progress = {
+        "registered_added": 0,
+        "registered_skipped": 0,
+        "assigned": 0,
+        "unassigned": 0,
+    }
+    try:
+        if p.to_register:
+            added, skipped = with_token(
+                lambda bearer, _op: billing.batch_register_keys(p.to_register, bearer)
             )
-        _LOG.info("unassigned validators", count=len(p.to_unassign))
+            progress["registered_added"] = added
+            progress["registered_skipped"] = skipped
+            _LOG.info("registered keys", added=added, skipped=skipped)
+
+        if p.to_assign:
+            with_token(
+                lambda bearer, op: billing.assign_validators(op, p.to_assign, bearer)
+            )
+            progress["assigned"] = len(p.to_assign)
+            _LOG.info("assigned validators", count=len(p.to_assign))
+
+        if p.to_unassign:
+            for idx, cid in p.to_unassign:
+                with_token(
+                    lambda bearer, op, idx=idx, cid=cid: billing.unassign_validator(
+                        op, idx, cid, bearer
+                    )
+                )
+                progress["unassigned"] += 1
+            _LOG.info("unassigned validators", count=progress["unassigned"])
+    except (BillingError, AuthError) as e:
+        # Emit the partial-progress summary before bubbling so the operator
+        # can see how far we got. The CLI's outer handler maps the
+        # exception to an exit code; we don't swallow it here.
+        _LOG.error(
+            "apply failed partway; partial progress recorded",
+            error=str(e),
+            **progress,
+        )
+        raise

@@ -93,6 +93,22 @@ def test_plaintext_loopback_allowed_for_dev(tmp_path: Path) -> None:
     assert cfg.auth_url == "http://localhost:8787"
 
 
+def test_userinfo_in_url_rejected(tmp_path: Path) -> None:
+    """Embedded credentials in URLs are bad hygiene — the ovi_live_* key
+    is the only credential this CLI presents. Also catches a class of
+    URL-parsing trickery where the apparent hostname differs from the
+    target (e.g. `http://localhost@evil.com` resolves to evil.com)."""
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    for url in (
+        "https://user@auth.example.com",
+        "https://user:pass@auth.example.com",
+        "https://localhost@evil.example.com",
+    ):
+        with pytest.raises(ValueError, match="userinfo"):
+            from_env({**_BASE, "auth_url": url, "indices_file": indices})
+
+
 def test_plaintext_beacon_url_rejected(tmp_path: Path) -> None:
     pubkeys = tmp_path / "p.txt"
     pubkeys.write_text("")

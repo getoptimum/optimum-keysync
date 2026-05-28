@@ -204,6 +204,14 @@ class BillingClient:
             if isinstance(body, dict) and body.get("error") == "scope_changed":
                 raise ScopeChangedError("billing JWT scope_changed")
             raise BillingError(f"billing 401: {resp.text}")
+        if resp.status_code == 429:
+            # Rate-limit. Retry with the standard exponential backoff —
+            # 3 attempts x wait_exponential(max=20s) keeps total time
+            # bounded while letting a brief 429 burst clear. We don't
+            # honour Retry-After here: the tenacity wait is already a
+            # bounded fallback, and burning the cache window on a 60s
+            # Retry-After would defeat the cron cadence.
+            raise _RetryableBillingError(f"billing 429: {resp.text}")
         if 500 <= resp.status_code < 600:
             raise _RetryableBillingError(f"billing {resp.status_code}: {resp.text}")
         if resp.status_code >= 400:
