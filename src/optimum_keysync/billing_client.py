@@ -181,17 +181,20 @@ class BillingClient:
     ) -> httpx.Response:
         """Public-error-envelope wrapper around the retry-decorated _do.
 
-        tenacity's reraise=True re-throws the original _RetryableBillingError
-        once attempts exhaust. Callers contract on BillingError as the public
-        unrecoverable-error type, so re-wrap here at the BillingClient
-        boundary. Without this, the CLI's `except BillingError` handler
-        misses sustained 429/5xx and the process dies on an uncaught
-        _RetryableBillingError instead of exiting cleanly with EXIT_BILLING.
+        tenacity's reraise=True re-throws the original exception once
+        attempts exhaust. _do retries on both _RetryableBillingError
+        (5xx/429) AND httpx.TransportError (network/DNS/timeout), so we
+        wrap both here. Callers contract on BillingError as the public
+        unrecoverable-error type; leaking httpx.TransportError past this
+        boundary would bypass the CLI's `except BillingError` exit and
+        crash the process instead of exiting cleanly with EXIT_BILLING.
         """
         try:
             return self._do(method, url, bearer=bearer, params=params, json=json)
         except _RetryableBillingError as e:
             raise BillingError(f"billing failed after retries: {e}") from e
+        except httpx.TransportError as e:
+            raise BillingError(f"billing transport failed after retries: {e}") from e
 
     @tenacity.retry(
         retry=tenacity.retry_if_exception_type(

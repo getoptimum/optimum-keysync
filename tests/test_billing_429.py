@@ -50,6 +50,20 @@ def test_sustained_429_surfaces_billing_error_after_retries() -> None:
 
 
 @respx.mock
+def test_transport_error_after_retries_surfaces_as_billing_error() -> None:
+    """httpx.TransportError (DNS, connection refused, read timeout) is
+    retried alongside _RetryableBillingError, but when retries exhaust
+    the wrapper must still hand the caller a BillingError — not a raw
+    httpx.TransportError that bypasses the CLI's exit-code handling."""
+    respx.get(BILLING_URL + "/api/v1/operators/42/validators").mock(
+        side_effect=httpx.ConnectError("name resolution failed")
+    )
+    c = BillingClient(BILLING_URL)
+    with pytest.raises(BillingError, match="transport failed after retries"):
+        c.list_validators("42", "mainnet", "jwt")
+
+
+@respx.mock
 def test_other_4xx_does_not_retry_and_surfaces_as_billing_error() -> None:
     """Sanity check that we didn't accidentally widen the retry branch
     to all 4xx — a 400 is still a hard fail."""
