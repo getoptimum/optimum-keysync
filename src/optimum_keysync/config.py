@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Hosts that may legitimately appear without TLS — local dev and the
 # explicit loopback addresses. Anything else MUST be https://.
@@ -87,6 +87,17 @@ class KeysyncConfig(BaseModel):
     indices_file: Path | None = None
 
     log_format: str = "console"
+
+    @field_validator("operator_id", mode="before")
+    @classmethod
+    def _empty_operator_id_is_none(cls, v: object) -> object:
+        """Treat an empty string as "not set". Keeps the CLI's
+        `if not operator_id` lazy-lookup branch working for both
+        unset env vars and explicitly-empty ones, while letting
+        a future Field(min_length=...) tighten the non-empty case."""
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
     @model_validator(mode="after")
     def _at_least_one_source(self) -> KeysyncConfig:

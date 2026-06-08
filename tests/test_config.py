@@ -74,6 +74,18 @@ def test_explicit_operator_id_is_preserved() -> None:
     assert cfg.operator_id == "42"
 
 
+def test_empty_operator_id_coerces_to_none() -> None:
+    """An explicitly-empty `KEYSYNC_OPERATOR_ID=""` (a shell typo or
+    misconfigured kustomize) is treated as "not set", so the lazy
+    /me lookup fires rather than the CLI passing an empty string
+    through to billing's URL paths."""
+    cfg = from_env({**_BASE, "operator_id": "", "indices_file": Path("/tmp/x.json")})
+    assert cfg.operator_id is None
+    # Same for a whitespace-only value.
+    cfg2 = from_env({**_BASE, "operator_id": "   ", "indices_file": Path("/tmp/x.json")})
+    assert cfg2.operator_id is None
+
+
 def test_plaintext_auth_url_rejected(tmp_path: Path) -> None:
     indices = tmp_path / "i.json"
     indices.write_text("[]")

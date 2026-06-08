@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import click
+from pydantic import ValidationError
 
 from optimum_keysync.auth_client import AuthClient, AuthError
 from optimum_keysync.beacon_client import BeaconClient, BeaconError
@@ -128,6 +129,19 @@ def _build_config(kwargs: dict[str, object]) -> KeysyncConfig:
     return from_env(overrides)  # type: ignore[arg-type]
 
 
+def _build_config_or_exit(kwargs: dict[str, object]) -> KeysyncConfig:
+    """Like `_build_config`, but converts pydantic / ValueError failures
+    into an EXIT_CONFIG exit so a typo'd flag or missing env var lands on
+    the documented config-error code rather than a Python traceback. Used
+    by every command's entry point; logging isn't configured yet at this
+    point, so failures go straight to stderr via click.echo."""
+    try:
+        return _build_config(kwargs)
+    except (ValidationError, ValueError) as e:
+        click.echo(f"config error: {e}", err=True)
+        sys.exit(EXIT_CONFIG)
+
+
 @click.group()
 def main() -> None:
     """Reconcile operator validator indices against optimum-billing."""
@@ -140,7 +154,7 @@ def main() -> None:
 @_common_options
 def cmd_show(**kwargs: object) -> None:
     """Print currently-assigned validators. Read-only."""
-    cfg = _build_config(kwargs)
+    cfg = _build_config_or_exit(kwargs)
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
     try:
         auth, billing = _build_auth_and_billing(cfg)
@@ -176,7 +190,7 @@ def cmd_show(**kwargs: object) -> None:
 @_common_options
 def cmd_diff(**kwargs: object) -> None:
     """Print the planned add/remove delta. No writes."""
-    cfg = _build_config(kwargs)
+    cfg = _build_config_or_exit(kwargs)
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
 
     p, _, _ = _compute_plan(cfg)
@@ -216,7 +230,7 @@ def cmd_sync(
     **kwargs: object,
 ) -> None:
     """Reconcile current → desired. --dry-run by default."""
-    cfg = _build_config(kwargs)
+    cfg = _build_config_or_exit(kwargs)
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
 
     p, auth, billing = _compute_plan(cfg)

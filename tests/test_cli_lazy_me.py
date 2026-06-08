@@ -14,31 +14,39 @@ from __future__ import annotations
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 from click.testing import CliRunner
 
 from optimum_keysync.cli import main
 
-_BASE_OPTS = [
-    "--billing-url", "https://billing.test",
-    "--auth-url", "https://auth.test",
-    "--api-key", "ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    "--network", "mainnet",
-    "--chain-id", "0x1",
-    "--owner-name", "acme",
-    "--indices-file", "/tmp/keysync-test-indices.json",
-]
+
+def _opts(indices_path: Path) -> list[str]:
+    """Per-test option list. indices_path is per-test (tmp_path fixture)
+    so parallel runs don't trample each other's files."""
+    return [
+        "--billing-url", "https://billing.test",
+        "--auth-url", "https://auth.test",
+        "--api-key", "ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "--network", "mainnet",
+        "--chain-id", "0x1",
+        "--owner-name", "acme",
+        "--indices-file", str(indices_path),
+    ]
 
 
-def _write_empty_indices(path: str = "/tmp/keysync-test-indices.json") -> None:
+@pytest.fixture
+def indices_file(tmp_path: Path) -> Path:
     """`show` is read-only and doesn't read the indices file; the config
-    validator just needs *some* source configured."""
-    Path(path).write_text("[]")
+    validator just needs *some* source configured. Per-test path keeps
+    runs isolated under pytest-xdist."""
+    p = tmp_path / "indices.json"
+    p.write_text("[]")
+    return p
 
 
 @respx.mock
-def test_show_without_operator_id_calls_auth_me_then_lists() -> None:
-    _write_empty_indices()
+def test_show_without_operator_id_calls_auth_me_then_lists(indices_file: Path) -> None:
     me_route = respx.get("https://auth.test/api/v1/me").mock(
         return_value=httpx.Response(200, json={"operator_id": "42", "role": "operator"})
     )
@@ -49,7 +57,7 @@ def test_show_without_operator_id_calls_auth_me_then_lists() -> None:
     )
 
     runner = CliRunner()
-    result = runner.invoke(main, ["show", *_BASE_OPTS], catch_exceptions=False)
+    result = runner.invoke(main, ["show", *_opts(indices_file)], catch_exceptions=False)
 
     assert result.exit_code == 0, result.output
     assert me_route.call_count == 1, "/me must be called once when operator_id is omitted"
@@ -57,8 +65,7 @@ def test_show_without_operator_id_calls_auth_me_then_lists() -> None:
 
 
 @respx.mock
-def test_show_with_explicit_operator_id_skips_auth_me() -> None:
-    _write_empty_indices()
+def test_show_with_explicit_operator_id_skips_auth_me(indices_file: Path) -> None:
     # Stub /me with a 500 so any unintended call would loudly fail.
     me_route = respx.get("https://auth.test/api/v1/me").mock(
         return_value=httpx.Response(500, text="should not be called")
@@ -72,7 +79,7 @@ def test_show_with_explicit_operator_id_skips_auth_me() -> None:
     runner = CliRunner()
     result = runner.invoke(
         main,
-        ["show", *_BASE_OPTS, "--operator-id", "7"],
+        ["show", *_opts(indices_file), "--operator-id", "7"],
         catch_exceptions=False,
     )
 
@@ -82,14 +89,13 @@ def test_show_with_explicit_operator_id_skips_auth_me() -> None:
 
 
 @respx.mock
-def test_show_auth_me_401_exits_auth() -> None:
-    _write_empty_indices()
+def test_show_auth_me_401_exits_auth(indices_file: Path) -> None:
     respx.get("https://auth.test/api/v1/me").mock(
         return_value=httpx.Response(401, json={"error": "invalid_credential"})
     )
 
     runner = CliRunner()
-    result = runner.invoke(main, ["show", *_BASE_OPTS], catch_exceptions=False)
+    result = runner.invoke(main, ["show", *_opts(indices_file)], catch_exceptions=False)
 
     # cli.EXIT_AUTH == 2
     assert result.exit_code == 2, result.output
