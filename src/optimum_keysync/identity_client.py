@@ -19,6 +19,8 @@ exit-code mapping stays uniform.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import TracebackType
+from typing import Self
 
 import httpx
 import tenacity
@@ -55,7 +57,28 @@ class IdentityClient:
         timeout_seconds: float = 15.0,
     ) -> None:
         self._auth_url = auth_url.rstrip("/")
+        # Track ownership so close() only closes a client we built. An
+        # injected client (tests, future shared-pool callers) keeps its
+        # own lifecycle — closing it from here would surprise the owner.
+        self._owns_client = client is None
         self._client = client or httpx.Client(timeout=timeout_seconds)
+
+    def close(self) -> None:
+        """Close the internal `httpx.Client` if we built it. Idempotent
+        and safe to call when an external client was injected (no-op)."""
+        if self._owns_client:
+            self._client.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.close()
 
     def get_me(self, bearer: str) -> MeResponse:
         """Resolve the caller's operator_id + role from /me.

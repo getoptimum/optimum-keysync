@@ -275,8 +275,10 @@ def _build_auth_and_billing(
     operator_id = cfg.operator_id
     if not operator_id:
         _LOG.info("operator_id not configured; resolving via auth /me", auth_url=cfg.auth_url)
-        identity = IdentityClient(auth_url=cfg.auth_url)
-        operator_id = identity.get_me(cfg.api_key).operator_id
+        # `with` so the internal httpx.Client gets closed once the /me
+        # call returns — keysync doesn't need it again this invocation.
+        with IdentityClient(auth_url=cfg.auth_url) as identity:
+            operator_id = identity.get_me(cfg.api_key).operator_id
     auth = AuthClient(api_key=cfg.api_key, operator_id=operator_id)
     return auth, billing
 

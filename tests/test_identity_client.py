@@ -119,3 +119,22 @@ def test_get_me_non_json_body_raises_identity_error() -> None:
     c = IdentityClient(AUTH_URL)
     with pytest.raises(IdentityError, match="non-JSON body"):
         c.get_me("ovi_live_test")
+
+
+def test_close_closes_internal_client_but_not_injected_one() -> None:
+    """close() (and the context-manager equivalent) must respect
+    ownership: an internal `httpx.Client` we built gets closed; a
+    client the caller injected stays open so they can keep using it."""
+    # Owned path: internal client closes on `with` exit.
+    with IdentityClient(AUTH_URL) as c:
+        owned_client = c._client
+    assert owned_client.is_closed, "owned client must be closed on context exit"
+
+    # Injected path: caller-owned client survives.
+    injected = httpx.Client()
+    try:
+        with IdentityClient(AUTH_URL, client=injected) as c:
+            assert c._client is injected
+        assert not injected.is_closed, "injected client must NOT be closed by IdentityClient"
+    finally:
+        injected.close()
