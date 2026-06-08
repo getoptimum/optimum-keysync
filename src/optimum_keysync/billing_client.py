@@ -8,9 +8,10 @@ Endpoints used (see optimum-billing/internal/routes/{validators,validator_keys}.
   - DELETE /api/v1/operators/{op}/validators/{index}?chain_id={cid}
                                              — unassign
 
-Every request carries the operator JWT as `Authorization: Bearer ...`. On
-`scope_changed` (a 401 with a documented action) the caller drops the
-cached JWT, re-exchanges, and retries.
+Every request carries the operator API key as `Authorization: Bearer
+ovi_live_...` — direct-auth model. Billing's combinedAuth HMAC-hashes
+the key per request and rejects revoked keys with a plain 401 on the
+next call.
 """
 
 from __future__ import annotations
@@ -55,10 +56,6 @@ class ValidatorKeyRegistration:
 
 class BillingError(RuntimeError):
     """Billing returned an error we cannot retry."""
-
-
-class ScopeChangedError(RuntimeError):
-    """Billing rejected the JWT with scope_changed — caller must re-exchange."""
 
 
 class _RetryableBillingError(RuntimeError):
@@ -221,14 +218,10 @@ class BillingClient:
             json=json,
         )
         if resp.status_code == 401:
-            # The billing /verify path returns {"error":"scope_changed",...}
-            # when the JWT's scope_version is stale. Caller re-exchanges.
-            try:
-                body = resp.json()
-            except ValueError:
-                body = {}
-            if isinstance(body, dict) and body.get("error") == "scope_changed":
-                raise ScopeChangedError("billing JWT scope_changed")
+            # Direct-auth model: 401 means the ovi_live_* was rejected
+            # (unknown, revoked, or scoped to a different operator).
+            # Surface as a terminal BillingError — there's no
+            # re-exchange branch to bounce to.
             raise BillingError(f"billing 401: {resp.text}")
         if resp.status_code == 429:
             # Rate-limit. Retry with the standard exponential backoff —

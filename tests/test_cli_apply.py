@@ -65,7 +65,7 @@ class _StubAuth:
     def token(self):  # type: ignore[no-untyped-def]
         from optimum_keysync.auth_client import OperatorToken
 
-        return OperatorToken(access_token="t", expires_at=1e12, operator_id="42")
+        return OperatorToken(access_token="t", operator_id="42")
 
     def invalidate(self) -> None:
         pass

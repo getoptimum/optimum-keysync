@@ -23,7 +23,7 @@ spec:
               args: ["sync", "--apply", "--log-format", "json"]
               envFrom:
                 - configMapRef:
-                    name: optimum-keysync-config   # KEYSYNC_AUTH_URL, BILLING_URL, NETWORK, CHAIN_ID, OWNER_NAME, BEACON_URL
+                    name: optimum-keysync-config   # KEYSYNC_BILLING_URL, OPERATOR_ID, NETWORK, CHAIN_ID, OWNER_NAME, BEACON_URL
                 - secretRef:
                     name: optimum-keysync-secret   # KEYSYNC_API_KEY
               volumeMounts:

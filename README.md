@@ -9,7 +9,7 @@ CronJob — `--dry-run` by default, `--apply` to mutate.
 Given:
 
 - an operator API key (`ovi_live_*`) generated from the Optimum partners
-  dashboard,
+  dashboard, plus the operator UUID shown next to it,
 - a list of BLS pubkeys the operator owns (newline-separated file) and / or
   a JSON file of `{validator_index, chain_id, validator_key, owner_name}`
   tuples,
@@ -17,8 +17,11 @@ Given:
 
 keysync:
 
-1. Exchanges the `ovi_live_*` key at `optimum-auth` for a short-lived
-   (1h) operator JWT and extracts the bound `operator_id` from it.
+1. Presents the `ovi_live_*` directly to `optimum-billing` as the Bearer
+   on every API call. Billing's `combinedAuth` HMAC-hashes it, looks it
+   up in `internal.operator_api_keys`, and stamps `role=operator` on the
+   request. Revoking the key at the dashboard takes effect on keysync's
+   next request — no token caching to invalidate.
 2. Resolves the desired validator set: pubkeys against the beacon node's
    `/eth/v1/beacon/states/head/validators?id=<pubkey>` endpoint, plus
    anything in the indices JSON.
@@ -36,9 +39,9 @@ Re-runs are idempotent: a steady state reports `added=0, removed=0`.
 ```bash
 pip install optimum-keysync
 
-export KEYSYNC_AUTH_URL=https://auth.getoptimum.io
 export KEYSYNC_BILLING_URL=https://billing.getoptimum.io
 export KEYSYNC_API_KEY=ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export KEYSYNC_OPERATOR_ID=00000000-0000-0000-0000-000000000042
 export KEYSYNC_NETWORK=mainnet
 export KEYSYNC_CHAIN_ID=0x1
 export KEYSYNC_BEACON_URL=http://localhost:5052
@@ -55,9 +58,9 @@ All knobs come from environment variables (and matching flag overrides).
 
 | Env var | Required | Purpose |
 | --- | --- | --- |
-| `KEYSYNC_AUTH_URL` | yes | `https://auth.getoptimum.io` (prod) or `dev-auth.getoptimum.io` |
 | `KEYSYNC_BILLING_URL` | yes | Billing API base URL |
 | `KEYSYNC_API_KEY` | yes | `ovi_live_*` from the partners dashboard |
+| `KEYSYNC_OPERATOR_ID` | yes | Operator UUID shown next to the generated key |
 | `KEYSYNC_NETWORK` | yes | `mainnet`, `hoodi`, etc. |
 | `KEYSYNC_CHAIN_ID` | yes | Corresponding chain ID string |
 | `KEYSYNC_BEACON_URL` | conditional | Needed unless the entire desired set is in the indices file |
@@ -65,9 +68,6 @@ All knobs come from environment variables (and matching flag overrides).
 | `KEYSYNC_INDICES_FILE` | conditional | JSON fallback (air-gapped or pre-computed) |
 | `KEYSYNC_OWNER_NAME` | yes | Stored in `eth_validator_keys.owner_name` |
 | `KEYSYNC_LOG_FORMAT` | no | `console` (default) or `json` |
-
-The `operator_id` is derived from the JWT after exchange — no need to
-configure it separately.
 
 ## CLI
 
@@ -84,13 +84,12 @@ wiping out a whole operator's assignments.
 
 ## Operating notes
 
-- **The JWT is the bearer for everything past the initial exchange.** The
-  `ovi_live_*` secret never touches optimum-billing directly when
-  optimum-auth is in front. JWT TTL is 1 h; keysync re-exchanges before
-  expiry transparently.
-- **Tenacity wraps HTTP** — exponential backoff on 5xx / network errors
-  only. 4xx surfaces immediately so a misconfiguration fails fast rather
-  than retrying into a rate-limit.
+- **The `ovi_live_*` is the Bearer on every billing call** — no JWT
+  exchange, no token caching. Billing rejects revoked keys on the next
+  request, so revocation at the dashboard takes effect immediately.
+- **Tenacity wraps HTTP** — exponential backoff on 5xx / 429 / network
+  errors only. Other 4xx surfaces immediately so a misconfiguration
+  fails fast rather than retrying into a rate-limit.
 - **Beacon nodes** must allow unauthenticated reads on
   `/eth/v1/beacon/states/head/validators`. Use the beacon-node CLI's
   HTTP-allow flags if you've locked it down (Lighthouse: `--http`,

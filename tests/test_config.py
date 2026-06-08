@@ -9,9 +9,9 @@ import pytest
 from optimum_keysync.config import KeysyncConfig, from_env
 
 _BASE: dict[str, str | Path] = {
-    "auth_url": "https://auth.example",
     "billing_url": "https://billing.example",
     "api_key": "ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "operator_id": "00000000-0000-0000-0000-000000000042",
     "network": "mainnet",
     "chain_id": "0x1",
     "owner_name": "acme",
@@ -57,13 +57,13 @@ def test_wrong_api_key_prefix_is_rejected() -> None:
         )
 
 
-def test_plaintext_auth_url_rejected(tmp_path: Path) -> None:
-    indices = tmp_path / "i.json"
-    indices.write_text("[]")
-    with pytest.raises(ValueError, match="must use https"):
-        from_env(
-            {**_BASE, "auth_url": "http://auth.example.com", "indices_file": indices}
-        )
+def test_missing_operator_id_is_rejected() -> None:
+    """The operator_id scopes every /operators/{op}/validators call;
+    without it we can't authenticate against the right path. Fail
+    fast at config time, not at the first 404 from billing."""
+    base_no_op = {k: v for k, v in _BASE.items() if k != "operator_id"}
+    with pytest.raises(ValueError):
+        from_env({**base_no_op, "indices_file": Path("/tmp/x.json")})
 
 
 def test_plaintext_billing_url_rejected(tmp_path: Path) -> None:
@@ -85,12 +85,11 @@ def test_plaintext_loopback_allowed_for_dev(tmp_path: Path) -> None:
     cfg = from_env(
         {
             **_BASE,
-            "auth_url": "http://localhost:8787",
             "billing_url": "http://127.0.0.1:8080",
             "indices_file": indices,
         }
     )
-    assert cfg.auth_url == "http://localhost:8787"
+    assert cfg.billing_url == "http://127.0.0.1:8080"
 
 
 def test_userinfo_in_url_rejected(tmp_path: Path) -> None:
@@ -101,12 +100,12 @@ def test_userinfo_in_url_rejected(tmp_path: Path) -> None:
     indices = tmp_path / "i.json"
     indices.write_text("[]")
     for url in (
-        "https://user@auth.example.com",
-        "https://user:pass@auth.example.com",
+        "https://user@billing.example.com",
+        "https://user:pass@billing.example.com",
         "https://localhost@evil.example.com",
     ):
         with pytest.raises(ValueError, match="userinfo"):
-            from_env({**_BASE, "auth_url": url, "indices_file": indices})
+            from_env({**_BASE, "billing_url": url, "indices_file": indices})
 
 
 def test_plaintext_beacon_url_rejected(tmp_path: Path) -> None:
@@ -125,9 +124,9 @@ def test_plaintext_beacon_url_rejected(tmp_path: Path) -> None:
 def test_owner_name_length_capped() -> None:
     with pytest.raises(ValueError):
         KeysyncConfig(
-            auth_url="https://a",
             billing_url="https://b",
             api_key="ovi_live_xxxxxxxxxxxxxxxxxxxx",
+            operator_id="00000000-0000-0000-0000-000000000042",
             network="mainnet",
             chain_id="0x1",
             owner_name="x" * 129,
