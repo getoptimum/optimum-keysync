@@ -72,7 +72,14 @@ class IdentityClient:
         except httpx.TransportError as e:
             raise IdentityError(f"/me transport failed after retries: {e}") from e
 
-        body = resp.json()
+        # A 200 with a non-JSON body (proxy injecting an HTML error page,
+        # truncated response, etc.) would otherwise bubble as a raw
+        # json.JSONDecodeError and crash the CLI's `except IdentityError`
+        # mapping. Wrap so every terminal failure leaves through one type.
+        try:
+            body = resp.json()
+        except ValueError as e:
+            raise IdentityError(f"/me returned non-JSON body: {e}") from e
         op = str(body.get("operator_id") or "")
         if not op:
             # /me returns 200 with empty operator_id for ops-staff JWTs

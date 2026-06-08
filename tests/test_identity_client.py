@@ -104,11 +104,11 @@ def test_get_me_missing_operator_id_key_raises_identity_error() -> None:
 
 @respx.mock
 def test_get_me_non_json_body_raises_identity_error() -> None:
-    # Auth returned 200 but the body isn't JSON (e.g. an upstream proxy
-    # injected an HTML error page). resp.json() raises; the exception
-    # should not crash the CLI as a raw json.JSONDecodeError — it should
-    # surface as something the `except IdentityError` block in cli.py
-    # catches.
+    # Auth returned 200 but the body isn't JSON (proxy injecting an HTML
+    # error page, truncated upstream response, etc.). The bare json
+    # parser would raise json.JSONDecodeError which the CLI's
+    # `except IdentityError` block wouldn't catch; get_me wraps so every
+    # terminal failure leaves through the one type.
     respx.get(AUTH_URL + "/api/v1/me").mock(
         return_value=httpx.Response(
             200,
@@ -117,10 +117,5 @@ def test_get_me_non_json_body_raises_identity_error() -> None:
         )
     )
     c = IdentityClient(AUTH_URL)
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(IdentityError, match="non-JSON body"):
         c.get_me("ovi_live_test")
-    # If this fires as a raw JSONDecodeError, IdentityClient should be
-    # tightened to catch + re-raise as IdentityError. Pinning current
-    # behavior so a future fix flips this assertion deliberately.
-    import json as _json
-    assert isinstance(exc_info.value, (IdentityError, _json.JSONDecodeError, ValueError))

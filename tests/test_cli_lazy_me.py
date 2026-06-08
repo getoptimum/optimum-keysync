@@ -99,3 +99,41 @@ def test_show_auth_me_401_exits_auth(indices_file: Path) -> None:
 
     # cli.EXIT_AUTH == 2
     assert result.exit_code == 2, result.output
+
+
+# `diff` and `sync` go through _compute_plan, which has its own
+# _build_auth_and_billing call site with its own except block. `show`
+# bypasses that helper, so a regression there would slip past the tests
+# above. One diff-path test pins the same lazy-/me contract.
+
+
+@respx.mock
+def test_diff_without_operator_id_calls_auth_me(indices_file: Path) -> None:
+    me_route = respx.get("https://auth.test/api/v1/me").mock(
+        return_value=httpx.Response(200, json={"operator_id": "42", "role": "operator"})
+    )
+    list_route = respx.get("https://billing.test/api/v1/operators/42/validators").mock(
+        return_value=httpx.Response(
+            200, json={"operator_id": "42", "network": "mainnet", "validators": []}
+        )
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["diff", *_opts(indices_file)], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.output
+    assert me_route.call_count == 1, "/me must fire on the _compute_plan path too"
+    assert list_route.call_count == 1
+
+
+@respx.mock
+def test_diff_auth_me_401_exits_auth(indices_file: Path) -> None:
+    # Pins that a /me 401 on the _compute_plan path maps to EXIT_AUTH
+    # (the same as show), not EXIT_BILLING or an uncaught exception.
+    respx.get("https://auth.test/api/v1/me").mock(
+        return_value=httpx.Response(401, json={"error": "invalid_credential"})
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["diff", *_opts(indices_file)], catch_exceptions=False)
+    assert result.exit_code == 2, result.output
