@@ -27,6 +27,7 @@ from optimum_keysync.billing_client import (
 )
 from optimum_keysync.config import KeysyncConfig, from_env
 from optimum_keysync.desired_state import resolve as resolve_desired
+from optimum_keysync.identity_client import IdentityClient, IdentityError
 from optimum_keysync.logging import configure as configure_logging
 from optimum_keysync.logging import get_logger
 from optimum_keysync.reconcile import ReconcilePlan, plan
@@ -55,12 +56,15 @@ def _common_options(fn):
         "--billing-url", envvar="KEYSYNC_BILLING_URL", help="optimum-billing base URL"
     )(fn)
     fn = click.option(
+        "--auth-url", envvar="KEYSYNC_AUTH_URL", help="optimum-auth base URL (for /api/v1/me)"
+    )(fn)
+    fn = click.option(
         "--api-key", envvar="KEYSYNC_API_KEY", help="operator ovi_live_* key"
     )(fn)
     fn = click.option(
         "--operator-id",
         envvar="KEYSYNC_OPERATOR_ID",
-        help="operator UUID (shown next to the ovi_live_* key in the partners dashboard)",
+        help="operator_id; auto-resolved via auth /me when omitted",
     )(fn)
     fn = click.option(
         "--network", envvar="KEYSYNC_NETWORK", help="network name (mainnet/hoodi/...)"
@@ -106,6 +110,7 @@ def _build_config(kwargs: dict[str, object]) -> KeysyncConfig:
     overrides: dict[str, object] = {}
     name_map = {
         "billing_url": "billing_url",
+        "auth_url": "auth_url",
         "api_key": "api_key",
         "operator_id": "operator_id",
         "network": "network",
@@ -139,7 +144,7 @@ def cmd_show(**kwargs: object) -> None:
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
     try:
         auth, billing = _build_auth_and_billing(cfg)
-    except AuthError as e:
+    except (AuthError, IdentityError) as e:
         _LOG.error("auth setup failed", error=str(e))
         sys.exit(EXIT_AUTH)
 
@@ -242,15 +247,30 @@ def cmd_sync(
 def _build_auth_and_billing(
     cfg: KeysyncConfig,
 ) -> tuple[AuthClient, BillingClient]:
-    auth = AuthClient(api_key=cfg.api_key, operator_id=cfg.operator_id)
+    """Construct the BillingClient + AuthClient pair.
+
+    When `cfg.operator_id` is not set, calls `GET /api/v1/me` on
+    `cfg.auth_url` to resolve it from the API key — the auth Worker
+    already knows the binding (via the same `operator_api_keys` table
+    billing reads), /me just exposes that derivation. Raises
+    `IdentityError` on a failed lookup; the CLI commands wrap this
+    call site and map that to EXIT_AUTH. Explicit operator_id (env or
+    flag) skips the lookup.
+    """
     billing = BillingClient(billing_url=cfg.billing_url)
+    operator_id = cfg.operator_id
+    if not operator_id:
+        _LOG.info("operator_id not configured; resolving via auth /me", auth_url=cfg.auth_url)
+        identity = IdentityClient(auth_url=cfg.auth_url)
+        operator_id = identity.get_me(cfg.api_key).operator_id
+    auth = AuthClient(api_key=cfg.api_key, operator_id=operator_id)
     return auth, billing
 
 
 def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, BillingClient]:
     try:
         auth, billing = _build_auth_and_billing(cfg)
-    except AuthError as e:
+    except (AuthError, IdentityError) as e:
         _LOG.error("auth setup failed", error=str(e))
         sys.exit(EXIT_AUTH)
 

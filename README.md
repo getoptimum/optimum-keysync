@@ -9,7 +9,7 @@ CronJob — `--dry-run` by default, `--apply` to mutate.
 Given:
 
 - an operator API key (`ovi_live_*`) generated from the Optimum partners
-  dashboard, plus the operator UUID shown next to it,
+  dashboard,
 - a list of BLS pubkeys the operator owns (newline-separated file) and / or
   a JSON file of `{validator_index, chain_id, validator_key, owner_name}`
   tuples,
@@ -17,17 +17,21 @@ Given:
 
 keysync:
 
-1. Presents the `ovi_live_*` directly to `optimum-billing` as the Bearer
+1. Resolves the caller's `operator_id` by calling `GET /api/v1/me` on
+   `optimum-auth` (the same `ovi_live_*` as the Bearer). The result is
+   cached for the rest of the process. `KEYSYNC_OPERATOR_ID` can be set
+   explicitly to skip this step.
+2. Presents the `ovi_live_*` directly to `optimum-billing` as the Bearer
    on every API call. Billing's `combinedAuth` HMAC-hashes it, looks it
    up in `internal.operator_api_keys`, and stamps `role=operator` on the
    request. Revoking the key at the dashboard takes effect on keysync's
    next request — no token caching to invalidate.
-2. Resolves the desired validator set: pubkeys against the beacon node's
+3. Resolves the desired validator set: pubkeys against the beacon node's
    `/eth/v1/beacon/states/head/validators?id=<pubkey>` endpoint, plus
    anything in the indices JSON.
-3. Lists the operator's currently-assigned validators in `optimum-billing`.
-4. Computes the add / remove deltas.
-5. Under `--apply`, registers any new keys (`POST
+4. Lists the operator's currently-assigned validators in `optimum-billing`.
+5. Computes the add / remove deltas.
+6. Under `--apply`, registers any new keys (`POST
    /api/v1/validator-keys/batch` — idempotent server-side), assigns them
    to the operator, and unassigns anything that disappeared from the
    desired set.
@@ -40,8 +44,8 @@ Re-runs are idempotent: a steady state reports `added=0, removed=0`.
 pip install optimum-keysync
 
 export KEYSYNC_BILLING_URL=https://billing.getoptimum.io
+export KEYSYNC_AUTH_URL=https://auth.getoptimum.io
 export KEYSYNC_API_KEY=ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-export KEYSYNC_OPERATOR_ID=00000000-0000-0000-0000-000000000042
 export KEYSYNC_NETWORK=mainnet
 export KEYSYNC_CHAIN_ID=0x1
 export KEYSYNC_BEACON_URL=http://localhost:5052
@@ -59,8 +63,9 @@ All knobs come from environment variables (and matching flag overrides).
 | Env var | Required | Purpose |
 | --- | --- | --- |
 | `KEYSYNC_BILLING_URL` | yes | Billing API base URL |
+| `KEYSYNC_AUTH_URL` | yes | Auth API base URL (used for `GET /api/v1/me`) |
 | `KEYSYNC_API_KEY` | yes | `ovi_live_*` from the partners dashboard |
-| `KEYSYNC_OPERATOR_ID` | yes | Operator UUID shown next to the generated key |
+| `KEYSYNC_OPERATOR_ID` | no | Auto-resolved via `GET /api/v1/me`. Set explicitly to skip the lookup (one round-trip saved) or to pin the scope. |
 | `KEYSYNC_NETWORK` | yes | `mainnet`, `hoodi`, etc. |
 | `KEYSYNC_CHAIN_ID` | yes | Corresponding chain ID string |
 | `KEYSYNC_BEACON_URL` | conditional | Needed unless the entire desired set is in the indices file |

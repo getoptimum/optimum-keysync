@@ -67,12 +67,17 @@ class KeysyncConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     billing_url: Annotated[str, Field(min_length=1)]
+    # auth_url is the optimum-auth host (e.g. https://auth.getoptimum.io)
+    # that exposes GET /api/v1/me. keysync hits it to resolve operator_id
+    # from the API key when KEYSYNC_OPERATOR_ID is not set explicitly.
+    # Distinct from billing_url: auth.getoptimum.io is a Cloudflare Worker,
+    # billing.getoptimum.io is the Go service.
+    auth_url: Annotated[str, Field(min_length=1)]
     api_key: Annotated[str, Field(min_length=1)]
-    # operator_id is shown next to the freshly-generated key in the
-    # partners dashboard; customers paste both into their env. We don't
-    # derive it server-side (a /api/v1/me endpoint would let us, but
-    # that's a billing change we don't need yet).
-    operator_id: Annotated[str, Field(min_length=1)]
+    # operator_id is optional: when omitted, the CLI resolves it via
+    # `GET /api/v1/me` on auth_url on first contact. An explicit value
+    # (env or flag) wins, so existing configs keep working.
+    operator_id: str | None = None
     network: Annotated[str, Field(min_length=1)]
     chain_id: Annotated[str, Field(min_length=1)]
     owner_name: Annotated[str, Field(min_length=1, max_length=128)]
@@ -98,6 +103,7 @@ class KeysyncConfig(BaseModel):
                 "billing API accepts on this path"
             )
         _require_https("KEYSYNC_BILLING_URL", self.billing_url)
+        _require_https("KEYSYNC_AUTH_URL", self.auth_url)
         if self.beacon_url:
             _require_https("KEYSYNC_BEACON_URL", self.beacon_url)
         return self
@@ -127,8 +133,9 @@ def from_env(overrides: dict[str, str | Path | None] | None = None) -> KeysyncCo
 
     return KeysyncConfig(
         billing_url=pick("billing_url") or "",
+        auth_url=pick("auth_url") or "",
         api_key=pick("api_key") or "",
-        operator_id=pick("operator_id") or "",
+        operator_id=pick("operator_id"),
         network=pick("network") or "",
         chain_id=pick("chain_id") or "",
         owner_name=pick("owner_name") or "",
