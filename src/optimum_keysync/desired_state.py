@@ -8,9 +8,9 @@ assigned, with all the metadata the billing API requires to register it
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from optimum_keysync.beacon_client import BeaconClient
 from optimum_keysync.billing_client import ValidatorKeyRegistration
@@ -47,7 +47,7 @@ class DesiredSet:
             deduped[(e.validator_index, e.chain_id)] = e
         self._entries = tuple(deduped.values())
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[DesiredValidator]:
         return iter(self._entries)
 
     def __len__(self) -> int:

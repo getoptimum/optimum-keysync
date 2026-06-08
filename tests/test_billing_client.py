@@ -14,7 +14,6 @@ from optimum_keysync.billing_client import (
     ValidatorKeyRegistration,
 )
 
-
 BILLING_URL = "https://billing.test"
 
 

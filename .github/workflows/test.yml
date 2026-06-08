@@ -1,0 +1,51 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Minimal required scope — the job only reads source and reports a status
+# back to the run. No package publish, no PR write, no comment posting.
+# Explicit declaration is the GitHub-recommended default per
+# https://docs.github.com/en/actions/security-guides/automatic-token-authentication.
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # 10 minutes is plenty: 29-test pytest + ruff + mypy finishes in
+    # ~25s locally. A timeout caps a hung runner instead of waiting on
+    # the default 6h cap.
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      # Action versions pinned to commit SHAs (with a comment carrying the
+      # human-readable tag) per OpenSSF / GitHub-hardening guidance —
+      # version tags are mutable and an attacker who gains write on the
+      # action repo can re-point the tag at malicious code.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: install
+        run: pip install -e '.[dev]'
+
+      - name: ruff
+        run: ruff check src tests
+
+      - name: mypy
+        run: mypy src
+
+      - name: pytest
+        run: pytest -ra

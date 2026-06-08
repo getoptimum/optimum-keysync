@@ -13,8 +13,44 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+# Hosts that may legitimately appear without TLS — local dev and the
+# explicit loopback addresses. Anything else MUST be https://.
+_PLAINTEXT_OK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _require_https(name: str, url: str) -> None:
+    """Reject plaintext URLs against non-loopback hosts at config time.
+
+    The keysync CLI carries an `ovi_live_*` over the wire on every token
+    exchange and a short-lived JWT on every billing call. A mistyped
+    `http://billing.getoptimum.io` would silently send both in plaintext.
+    Fail-fast at startup so a misconfigured cron doesn't quietly leak.
+
+    We also refuse any URL carrying userinfo (`http://user:pass@host`).
+    The `ovi_live_*` is the credential — embedding additional creds in
+    the URL is bad hygiene and tools tend to log full URLs at debug
+    level, leaking whatever was put there.
+    """
+    if not url:
+        return
+    parts = urlsplit(url)
+    if parts.username is not None or parts.password is not None:
+        raise ValueError(
+            f"{name} must not embed userinfo (user:pass@host); the operator "
+            f"API key is the only credential this CLI presents."
+        )
+    if parts.scheme == "https":
+        return
+    if parts.scheme == "http" and (parts.hostname or "") in _PLAINTEXT_OK_HOSTS:
+        return
+    raise ValueError(
+        f"{name} must use https:// (got {url!r}). Plaintext is only allowed "
+        f"for loopback hosts ({sorted(_PLAINTEXT_OK_HOSTS)}) — dev convenience only."
+    )
 
 
 class KeysyncConfig(BaseModel):
@@ -56,6 +92,10 @@ class KeysyncConfig(BaseModel):
                 "operator-portal API key shape, the only credential the "
                 "billing API accepts on this path"
             )
+        _require_https("KEYSYNC_AUTH_URL", self.auth_url)
+        _require_https("KEYSYNC_BILLING_URL", self.billing_url)
+        if self.beacon_url:
+            _require_https("KEYSYNC_BEACON_URL", self.beacon_url)
         return self
 
 

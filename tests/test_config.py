@@ -8,7 +8,6 @@ import pytest
 
 from optimum_keysync.config import KeysyncConfig, from_env
 
-
 _BASE: dict[str, str | Path] = {
     "auth_url": "https://auth.example",
     "billing_url": "https://billing.example",
@@ -54,6 +53,71 @@ def test_wrong_api_key_prefix_is_rejected() -> None:
                 **_BASE,
                 "api_key": "ogw_live_xxx",
                 "indices_file": Path("/tmp/x.json"),
+            }
+        )
+
+
+def test_plaintext_auth_url_rejected(tmp_path: Path) -> None:
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    with pytest.raises(ValueError, match="must use https"):
+        from_env(
+            {**_BASE, "auth_url": "http://auth.example.com", "indices_file": indices}
+        )
+
+
+def test_plaintext_billing_url_rejected(tmp_path: Path) -> None:
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    with pytest.raises(ValueError, match="must use https"):
+        from_env(
+            {
+                **_BASE,
+                "billing_url": "http://billing.example.com",
+                "indices_file": indices,
+            }
+        )
+
+
+def test_plaintext_loopback_allowed_for_dev(tmp_path: Path) -> None:
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    cfg = from_env(
+        {
+            **_BASE,
+            "auth_url": "http://localhost:8787",
+            "billing_url": "http://127.0.0.1:8080",
+            "indices_file": indices,
+        }
+    )
+    assert cfg.auth_url == "http://localhost:8787"
+
+
+def test_userinfo_in_url_rejected(tmp_path: Path) -> None:
+    """Embedded credentials in URLs are bad hygiene — the ovi_live_* key
+    is the only credential this CLI presents. Also catches a class of
+    URL-parsing trickery where the apparent hostname differs from the
+    target (e.g. `http://localhost@evil.com` resolves to evil.com)."""
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    for url in (
+        "https://user@auth.example.com",
+        "https://user:pass@auth.example.com",
+        "https://localhost@evil.example.com",
+    ):
+        with pytest.raises(ValueError, match="userinfo"):
+            from_env({**_BASE, "auth_url": url, "indices_file": indices})
+
+
+def test_plaintext_beacon_url_rejected(tmp_path: Path) -> None:
+    pubkeys = tmp_path / "p.txt"
+    pubkeys.write_text("")
+    with pytest.raises(ValueError, match="must use https"):
+        from_env(
+            {
+                **_BASE,
+                "beacon_url": "http://beacon.example.com",
+                "pubkeys_file": pubkeys,
             }
         )
 

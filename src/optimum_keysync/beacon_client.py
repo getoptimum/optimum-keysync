@@ -21,8 +21,8 @@ We skip anything else (e.g. `withdrawal_*`).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import httpx
 import tenacity
@@ -87,11 +87,11 @@ class BeaconClient:
         """Resolve a (possibly large) pubkey list to (index, pubkey, status)
         triples.
 
-        Pubkeys not known to the beacon node are silently omitted — they're
-        almost certainly validators that have been deposited but not yet
-        registered on chain, and they'll come back in a subsequent run once
-        the beacon node sees them. We log a debug line per missing pubkey
-        so this isn't completely silent.
+        Pubkeys not known to the beacon node are omitted from the result
+        — they're either freshly-deposited validators not yet on chain
+        (will come back next run) or typos. We surface the count at
+        warning level so a typo'd pubkeys file doesn't look like a
+        silent success.
         """
         normalised = [self._normalise(pk) for pk in pubkeys]
         seen: dict[str, BeaconValidator] = {}
@@ -99,9 +99,15 @@ class BeaconClient:
             for v in self._fetch_chunk(chunk):
                 seen[v.pubkey] = v
 
-        for pk in normalised:
-            if pk not in seen:
-                _LOG.debug("beacon node has no record for pubkey", pubkey=pk)
+        missing = [pk for pk in normalised if pk not in seen]
+        if missing:
+            _LOG.warning(
+                "beacon node has no record for some pubkeys "
+                "(unactivated deposits, or typos in pubkeys file)",
+                missing_count=len(missing),
+                total=len(normalised),
+                sample=missing[:3],
+            )
 
         return [v for v in seen.values() if v.status in _INCLUDED_STATUSES]
 
@@ -112,7 +118,9 @@ class BeaconClient:
         reraise=True,
     )
     def _fetch_chunk(self, pubkeys: Sequence[str]) -> list[BeaconValidator]:
-        params = [("id", pk) for pk in pubkeys]
+        params: list[tuple[str, str | int | float | bool | None]] = [
+            ("id", pk) for pk in pubkeys
+        ]
         url = self._beacon_url + "/eth/v1/beacon/states/head/validators"
         resp = self._client.get(url, params=params)
         if 500 <= resp.status_code < 600:
@@ -151,6 +159,13 @@ class BeaconClient:
             raise ValueError(
                 f"BLS pubkey has unexpected length {len(pk)} (want 98 incl. 0x): {pubkey!r}"
             )
+        # Hex-charset check: catches typo'd pubkeys (e.g. an `O`/`o` confusion)
+        # at the trust boundary instead of forwarding them to the beacon node.
+        # int() raises ValueError on any non-hex character.
+        try:
+            int(pk[2:], 16)
+        except ValueError as e:
+            raise ValueError(f"BLS pubkey is not valid hex: {pubkey!r}") from e
         return pk
 
 

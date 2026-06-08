@@ -16,12 +16,11 @@ from __future__ import annotations
 import json as _json
 import sys
 from pathlib import Path
-from typing import Sequence
 
 import click
 
 from optimum_keysync.auth_client import AuthClient, AuthError
-from optimum_keysync.beacon_client import BeaconClient
+from optimum_keysync.beacon_client import BeaconClient, BeaconError
 from optimum_keysync.billing_client import (
     BillingClient,
     BillingError,
@@ -30,7 +29,8 @@ from optimum_keysync.billing_client import (
 )
 from optimum_keysync.config import KeysyncConfig, from_env
 from optimum_keysync.desired_state import resolve as resolve_desired
-from optimum_keysync.logging import configure as configure_logging, get_logger
+from optimum_keysync.logging import configure as configure_logging
+from optimum_keysync.logging import get_logger
 from optimum_keysync.reconcile import ReconcilePlan, plan
 
 _LOG = get_logger(__name__)
@@ -244,7 +244,12 @@ def _build_token_and_billing(
 
 
 def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, BillingClient]:
-    auth, billing = _build_token_and_billing(cfg)
+    try:
+        auth, billing = _build_token_and_billing(cfg)
+    except AuthError as e:
+        _LOG.error("token exchange failed", error=str(e))
+        sys.exit(EXIT_AUTH)
+
     beacon = BeaconClient(cfg.beacon_url) if cfg.beacon_url else None
     try:
         desired = resolve_desired(
@@ -255,10 +260,25 @@ def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, Billin
             beacon=beacon,
         )
     except ValueError as e:
+        # Pubkey hex/length validation, indices-file parsing errors, etc.
         _LOG.error("desired-state resolution failed", error=str(e))
         sys.exit(EXIT_CONFIG)
+    except BeaconError as e:
+        _LOG.error("beacon node call failed", error=str(e))
+        sys.exit(EXIT_BEACON)
 
-    current = _list_with_retry(billing, auth, cfg)
+    try:
+        current = _list_with_retry(billing, auth, cfg)
+    except AuthError as e:
+        # _list_with_retry can re-exchange on scope_changed; the second
+        # exchange may surface a different AuthError (revoked between runs,
+        # auth service degraded, …). Without this branch, the AuthError
+        # would crash the process instead of producing a clean EXIT_AUTH.
+        _LOG.error("auth re-exchange during list failed", error=str(e))
+        sys.exit(EXIT_AUTH)
+    except BillingError as e:
+        _LOG.error("billing list call failed", error=str(e))
+        sys.exit(EXIT_BILLING)
     return plan(desired, current), auth, billing
 
 
@@ -306,23 +326,51 @@ def _apply_plan(
             token = auth.token()
             return action(token.access_token, token.operator_id)
 
-    if p.to_register:
-        added, skipped = with_token(
-            lambda bearer, _op: billing.batch_register_keys(p.to_register, bearer)
-        )
-        _LOG.info("registered keys", added=added, skipped=skipped)
-
-    if p.to_assign:
-        with_token(
-            lambda bearer, op: billing.assign_validators(op, p.to_assign, bearer)
-        )
-        _LOG.info("assigned validators", count=len(p.to_assign))
-
-    if p.to_unassign:
-        for idx, cid in p.to_unassign:
-            with_token(
-                lambda bearer, op, idx=idx, cid=cid: billing.unassign_validator(
-                    op, idx, cid, bearer
-                )
+    # Track progress across the three stages so a failure mid-apply (e.g.
+    # billing 5xx after register succeeded) tells the operator exactly
+    # which stages landed. Without this, a partial reconcile looks like a
+    # full failure from logs and the next cron run is harder to reason
+    # about. Each stage is idempotent server-side (register dedups on
+    # conflict, assign is filtered by current set, unassign is per-row)
+    # so a re-run picks up where we left off; the log line documents that.
+    progress = {
+        "registered_added": 0,
+        "registered_skipped": 0,
+        "assigned": 0,
+        "unassigned": 0,
+    }
+    try:
+        if p.to_register:
+            added, skipped = with_token(
+                lambda bearer, _op: billing.batch_register_keys(p.to_register, bearer)
             )
-        _LOG.info("unassigned validators", count=len(p.to_unassign))
+            progress["registered_added"] = added
+            progress["registered_skipped"] = skipped
+            _LOG.info("registered keys", added=added, skipped=skipped)
+
+        if p.to_assign:
+            with_token(
+                lambda bearer, op: billing.assign_validators(op, p.to_assign, bearer)
+            )
+            progress["assigned"] = len(p.to_assign)
+            _LOG.info("assigned validators", count=len(p.to_assign))
+
+        if p.to_unassign:
+            for idx, cid in p.to_unassign:
+                with_token(
+                    lambda bearer, op, idx=idx, cid=cid: billing.unassign_validator(
+                        op, idx, cid, bearer
+                    )
+                )
+                progress["unassigned"] += 1
+            _LOG.info("unassigned validators", count=progress["unassigned"])
+    except (BillingError, AuthError) as e:
+        # Emit the partial-progress summary before bubbling so the operator
+        # can see how far we got. The CLI's outer handler maps the
+        # exception to an exit code; we don't swallow it here.
+        _LOG.error(
+            "apply failed partway; partial progress recorded",
+            error=str(e),
+            **progress,
+        )
+        raise

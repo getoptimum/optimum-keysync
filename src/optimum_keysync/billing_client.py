@@ -15,8 +15,9 @@ cached JWT, re-exchanges, and retries.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 import tenacity
@@ -84,7 +85,7 @@ class BillingClient:
         bearer: str,
     ) -> list[ValidatorAssignment]:
         url = f"{self._billing_url}/api/v1/operators/{operator_id}/validators"
-        resp = self._do("GET", url, bearer=bearer, params={"network": network})
+        resp = self._call("GET", url, bearer=bearer, params={"network": network})
         body = resp.json()
         # Server returns ValidatorsListResponse — extract the assignments.
         raw = body.get("assignments")
@@ -126,7 +127,7 @@ class BillingClient:
                 ],
             }
             url = f"{self._billing_url}/api/v1/validator-keys/batch"
-            resp = self._do("POST", url, bearer=bearer, json=payload)
+            resp = self._call("POST", url, bearer=bearer, json=payload)
             body = resp.json()
             added += int(body.get("added", 0))
             skipped += int(body.get("skipped", 0))
@@ -147,7 +148,7 @@ class BillingClient:
             ],
         }
         url = f"{self._billing_url}/api/v1/operators/{operator_id}/validators"
-        self._do("POST", url, bearer=bearer, json=payload)
+        self._call("POST", url, bearer=bearer, json=payload)
 
     def unassign_validator(
         self,
@@ -160,7 +161,7 @@ class BillingClient:
             f"{self._billing_url}/api/v1/operators/{operator_id}/validators/"
             f"{validator_index}"
         )
-        self._do(
+        self._call(
             "DELETE",
             url,
             bearer=bearer,
@@ -168,6 +169,32 @@ class BillingClient:
         )
 
     # ── Internals ─────────────────────────────────────────────────────────
+
+    def _call(
+        self,
+        method: str,
+        url: str,
+        *,
+        bearer: str,
+        params: Mapping[str, str] | None = None,
+        json: Mapping[str, Any] | None = None,
+    ) -> httpx.Response:
+        """Public-error-envelope wrapper around the retry-decorated _do.
+
+        tenacity's reraise=True re-throws the original exception once
+        attempts exhaust. _do retries on both _RetryableBillingError
+        (5xx/429) AND httpx.TransportError (network/DNS/timeout), so we
+        wrap both here. Callers contract on BillingError as the public
+        unrecoverable-error type; leaking httpx.TransportError past this
+        boundary would bypass the CLI's `except BillingError` exit and
+        crash the process instead of exiting cleanly with EXIT_BILLING.
+        """
+        try:
+            return self._do(method, url, bearer=bearer, params=params, json=json)
+        except _RetryableBillingError as e:
+            raise BillingError(f"billing failed after retries: {e}") from e
+        except httpx.TransportError as e:
+            raise BillingError(f"billing transport failed after retries: {e}") from e
 
     @tenacity.retry(
         retry=tenacity.retry_if_exception_type(
@@ -183,8 +210,8 @@ class BillingClient:
         url: str,
         *,
         bearer: str,
-        params: dict[str, str] | None = None,
-        json: dict[str, object] | None = None,
+        params: Mapping[str, str] | None = None,
+        json: Mapping[str, Any] | None = None,
     ) -> httpx.Response:
         resp = self._client.request(
             method,
@@ -203,6 +230,14 @@ class BillingClient:
             if isinstance(body, dict) and body.get("error") == "scope_changed":
                 raise ScopeChangedError("billing JWT scope_changed")
             raise BillingError(f"billing 401: {resp.text}")
+        if resp.status_code == 429:
+            # Rate-limit. Retry with the standard exponential backoff —
+            # 3 attempts x wait_exponential(max=20s) keeps total time
+            # bounded while letting a brief 429 burst clear. We don't
+            # honour Retry-After here: the tenacity wait is already a
+            # bounded fallback, and burning the cache window on a 60s
+            # Retry-After would defeat the cron cadence.
+            raise _RetryableBillingError(f"billing 429: {resp.text}")
         if 500 <= resp.status_code < 600:
             raise _RetryableBillingError(f"billing {resp.status_code}: {resp.text}")
         if resp.status_code >= 400:
