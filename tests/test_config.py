@@ -11,7 +11,7 @@ from optimum_keysync.config import KeysyncConfig, from_env
 _BASE: dict[str, str | Path] = {
     "billing_url": "https://billing.example",
     "api_key": "ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    "operator_id": "00000000-0000-0000-0000-000000000042",
+    "operator_id": "42",
     "network": "mainnet",
     "chain_id": "0x1",
     "owner_name": "acme",
@@ -57,13 +57,20 @@ def test_wrong_api_key_prefix_is_rejected() -> None:
         )
 
 
-def test_missing_operator_id_is_rejected() -> None:
-    """The operator_id scopes every /operators/{op}/validators call;
-    without it we can't authenticate against the right path. Fail
-    fast at config time, not at the first 404 from billing."""
+def test_missing_operator_id_is_accepted_for_lazy_resolution() -> None:
+    """operator_id is optional: when omitted, the CLI resolves it via
+    `GET /api/v1/me` on first contact with billing. Config must accept
+    it as None so that path is reachable."""
     base_no_op = {k: v for k, v in _BASE.items() if k != "operator_id"}
-    with pytest.raises(ValueError):
-        from_env({**base_no_op, "indices_file": Path("/tmp/x.json")})
+    cfg = from_env({**base_no_op, "indices_file": Path("/tmp/x.json")})
+    assert cfg.operator_id is None
+
+
+def test_explicit_operator_id_is_preserved() -> None:
+    """An env- or flag-supplied operator_id still wins — the lazy
+    /me path is only taken when nothing is set."""
+    cfg = from_env({**_BASE, "indices_file": Path("/tmp/x.json")})
+    assert cfg.operator_id == "42"
 
 
 def test_plaintext_billing_url_rejected(tmp_path: Path) -> None:
@@ -126,7 +133,7 @@ def test_owner_name_length_capped() -> None:
         KeysyncConfig(
             billing_url="https://b",
             api_key="ovi_live_xxxxxxxxxxxxxxxxxxxx",
-            operator_id="00000000-0000-0000-0000-000000000042",
+            operator_id="42",
             network="mainnet",
             chain_id="0x1",
             owner_name="x" * 129,

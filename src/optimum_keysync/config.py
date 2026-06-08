@@ -68,11 +68,10 @@ class KeysyncConfig(BaseModel):
 
     billing_url: Annotated[str, Field(min_length=1)]
     api_key: Annotated[str, Field(min_length=1)]
-    # operator_id is shown next to the freshly-generated key in the
-    # partners dashboard; customers paste both into their env. We don't
-    # derive it server-side (a /api/v1/me endpoint would let us, but
-    # that's a billing change we don't need yet).
-    operator_id: Annotated[str, Field(min_length=1)]
+    # operator_id is optional: when omitted, the CLI resolves it via
+    # `GET /api/v1/me` on first contact with billing. An explicit value
+    # (env or flag) still wins, so existing configs keep working.
+    operator_id: str | None = None
     network: Annotated[str, Field(min_length=1)]
     chain_id: Annotated[str, Field(min_length=1)]
     owner_name: Annotated[str, Field(min_length=1, max_length=128)]
@@ -128,7 +127,7 @@ def from_env(overrides: dict[str, str | Path | None] | None = None) -> KeysyncCo
     return KeysyncConfig(
         billing_url=pick("billing_url") or "",
         api_key=pick("api_key") or "",
-        operator_id=pick("operator_id") or "",
+        operator_id=pick("operator_id"),
         network=pick("network") or "",
         chain_id=pick("chain_id") or "",
         owner_name=pick("owner_name") or "",

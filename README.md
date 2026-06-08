@@ -9,7 +9,7 @@ CronJob — `--dry-run` by default, `--apply` to mutate.
 Given:
 
 - an operator API key (`ovi_live_*`) generated from the Optimum partners
-  dashboard, plus the operator UUID shown next to it,
+  dashboard,
 - a list of BLS pubkeys the operator owns (newline-separated file) and / or
   a JSON file of `{validator_index, chain_id, validator_key, owner_name}`
   tuples,
@@ -41,7 +41,6 @@ pip install optimum-keysync
 
 export KEYSYNC_BILLING_URL=https://billing.getoptimum.io
 export KEYSYNC_API_KEY=ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-export KEYSYNC_OPERATOR_ID=00000000-0000-0000-0000-000000000042
 export KEYSYNC_NETWORK=mainnet
 export KEYSYNC_CHAIN_ID=0x1
 export KEYSYNC_BEACON_URL=http://localhost:5052
@@ -60,7 +59,7 @@ All knobs come from environment variables (and matching flag overrides).
 | --- | --- | --- |
 | `KEYSYNC_BILLING_URL` | yes | Billing API base URL |
 | `KEYSYNC_API_KEY` | yes | `ovi_live_*` from the partners dashboard |
-| `KEYSYNC_OPERATOR_ID` | yes | Operator UUID shown next to the generated key |
+| `KEYSYNC_OPERATOR_ID` | no | Auto-resolved via `GET /api/v1/me` on first call. Set explicitly to skip the lookup (one round-trip saved) or to pin the scope. |
 | `KEYSYNC_NETWORK` | yes | `mainnet`, `hoodi`, etc. |
 | `KEYSYNC_CHAIN_ID` | yes | Corresponding chain ID string |
 | `KEYSYNC_BEACON_URL` | conditional | Needed unless the entire desired set is in the indices file |

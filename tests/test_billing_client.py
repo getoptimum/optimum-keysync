@@ -9,6 +9,7 @@ import respx
 from optimum_keysync.billing_client import (
     BillingClient,
     BillingError,
+    MeResponse,
     ValidatorAssignment,
     ValidatorKeyRegistration,
 )
@@ -90,3 +91,38 @@ def test_assign_validators_noop_when_empty() -> None:
     c = BillingClient(BILLING_URL)
     c.assign_validators("42", [], "jwt-token")
     # No respx route registered → respx would have raised if a call was made.
+
+
+@respx.mock
+def test_get_me_returns_operator_id_and_role() -> None:
+    route = respx.get(BILLING_URL + "/api/v1/me").mock(
+        return_value=httpx.Response(200, json={"operator_id": "42", "role": "operator"})
+    )
+    c = BillingClient(BILLING_URL)
+    me = c.get_me("ovi_live_test")
+    assert me == MeResponse(operator_id="42", role="operator")
+    # The bearer must be forwarded verbatim — that's the whole auth signal.
+    assert route.calls[0].request.headers["authorization"] == "Bearer ovi_live_test"
+
+
+@respx.mock
+def test_get_me_empty_operator_id_raises_billing_error() -> None:
+    # A super_admin JWT or ops-staff credential has no operator binding;
+    # /me echoes {operator_id: "", role: "super_admin"}. keysync needs a
+    # real operator scope, so this is a terminal config-style error.
+    respx.get(BILLING_URL + "/api/v1/me").mock(
+        return_value=httpx.Response(200, json={"operator_id": "", "role": "super_admin"})
+    )
+    c = BillingClient(BILLING_URL)
+    with pytest.raises(BillingError, match="not scoped to a single operator"):
+        c.get_me("ovi_live_test")
+
+
+@respx.mock
+def test_get_me_401_raises_billing_error() -> None:
+    respx.get(BILLING_URL + "/api/v1/me").mock(
+        return_value=httpx.Response(401, text="revoked")
+    )
+    c = BillingClient(BILLING_URL)
+    with pytest.raises(BillingError):
+        c.get_me("ovi_live_revoked")

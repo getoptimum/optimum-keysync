@@ -1,7 +1,8 @@
 """Thin client for optimum-billing's validator-key + assignment surface.
 
-Endpoints used (see optimum-billing/internal/routes/{validators,validator_keys}.go):
+Endpoints used (see optimum-billing/internal/routes/{operators,validators,validator_keys}.go):
 
+  - GET  /api/v1/me                         — caller identity (operator_id, role)
   - POST /api/v1/validator-keys/batch       — idempotent bulk-register
   - GET  /api/v1/operators/{op}/validators  — current assignment set
   - POST /api/v1/operators/{op}/validators  — assign new indices
@@ -54,6 +55,14 @@ class ValidatorKeyRegistration:
     owner_name: str
 
 
+@dataclass(frozen=True)
+class MeResponse:
+    """Caller identity from `GET /api/v1/me`."""
+
+    operator_id: str
+    role: str
+
+
 class BillingError(RuntimeError):
     """Billing returned an error we cannot retry."""
 
@@ -74,6 +83,27 @@ class BillingClient:
         self._client = client or httpx.Client(timeout=timeout_seconds)
 
     # ── Reads ─────────────────────────────────────────────────────────────
+
+    def get_me(self, bearer: str) -> MeResponse:
+        """Resolve the caller's operator_id + role from `GET /api/v1/me`.
+
+        Lets the CLI drop `KEYSYNC_OPERATOR_ID` from required config —
+        the server already knows the operator_id from the API key
+        (combinedAuth's apikeys lookup), this endpoint just echoes it
+        back. Raises `BillingError` if the credential isn't bound to
+        an operator (e.g. an ops-staff JWT, not a real keysync user).
+        """
+        url = f"{self._billing_url}/api/v1/me"
+        resp = self._call("GET", url, bearer=bearer)
+        body = resp.json()
+        op = str(body.get("operator_id") or "")
+        if not op:
+            raise BillingError(
+                "billing /me returned no operator_id — the credential is not "
+                "scoped to a single operator (likely an ops-staff token). "
+                "keysync requires an operator-scoped ovi_* key."
+            )
+        return MeResponse(operator_id=op, role=str(body.get("role") or ""))
 
     def list_validators(
         self,

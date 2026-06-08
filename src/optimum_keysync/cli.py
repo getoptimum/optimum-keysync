@@ -142,6 +142,10 @@ def cmd_show(**kwargs: object) -> None:
     except AuthError as e:
         _LOG.error("auth setup failed", error=str(e))
         sys.exit(EXIT_AUTH)
+    except BillingError as e:
+        # /me lookup failed (e.g. revoked key, billing 5xx after retries).
+        _LOG.error("billing /me lookup failed", error=str(e))
+        sys.exit(EXIT_BILLING)
 
     token = auth.token()
     try:
@@ -242,8 +246,20 @@ def cmd_sync(
 def _build_auth_and_billing(
     cfg: KeysyncConfig,
 ) -> tuple[AuthClient, BillingClient]:
-    auth = AuthClient(api_key=cfg.api_key, operator_id=cfg.operator_id)
+    """Construct the BillingClient + AuthClient pair.
+
+    When `cfg.operator_id` is not set, calls `GET /api/v1/me` to resolve
+    it from the API key — server-side combinedAuth already knows the
+    binding, /me just echoes it. Raises `BillingError` on a failed
+    lookup; the CLI commands wrap this call site to map that to
+    EXIT_BILLING. Explicit operator_id (env or flag) skips the lookup.
+    """
     billing = BillingClient(billing_url=cfg.billing_url)
+    operator_id = cfg.operator_id
+    if not operator_id:
+        _LOG.info("operator_id not configured; resolving via billing /me")
+        operator_id = billing.get_me(cfg.api_key).operator_id
+    auth = AuthClient(api_key=cfg.api_key, operator_id=operator_id)
     return auth, billing
 
 
@@ -253,6 +269,10 @@ def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, Billin
     except AuthError as e:
         _LOG.error("auth setup failed", error=str(e))
         sys.exit(EXIT_AUTH)
+    except BillingError as e:
+        # /me lookup failed (e.g. revoked key, billing 5xx after retries).
+        _LOG.error("billing /me lookup failed", error=str(e))
+        sys.exit(EXIT_BILLING)
 
     beacon = BeaconClient(cfg.beacon_url) if cfg.beacon_url else None
     try:
