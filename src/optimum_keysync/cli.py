@@ -24,8 +24,6 @@ from optimum_keysync.beacon_client import BeaconClient, BeaconError
 from optimum_keysync.billing_client import (
     BillingClient,
     BillingError,
-    ScopeChangedError,
-    ValidatorAssignment,
 )
 from optimum_keysync.config import KeysyncConfig, from_env
 from optimum_keysync.desired_state import resolve as resolve_desired
@@ -54,13 +52,15 @@ EXIT_BEACON = 6
 # fine for six options and keeps each command signature self-documenting.
 def _common_options(fn):
     fn = click.option(
-        "--auth-url", envvar="KEYSYNC_AUTH_URL", help="optimum-auth base URL"
-    )(fn)
-    fn = click.option(
         "--billing-url", envvar="KEYSYNC_BILLING_URL", help="optimum-billing base URL"
     )(fn)
     fn = click.option(
         "--api-key", envvar="KEYSYNC_API_KEY", help="operator ovi_live_* key"
+    )(fn)
+    fn = click.option(
+        "--operator-id",
+        envvar="KEYSYNC_OPERATOR_ID",
+        help="operator UUID (shown next to the ovi_live_* key in the partners dashboard)",
     )(fn)
     fn = click.option(
         "--network", envvar="KEYSYNC_NETWORK", help="network name (mainnet/hoodi/...)"
@@ -105,9 +105,9 @@ def _build_config(kwargs: dict[str, object]) -> KeysyncConfig:
     config layer's override dict."""
     overrides: dict[str, object] = {}
     name_map = {
-        "auth_url": "auth_url",
         "billing_url": "billing_url",
         "api_key": "api_key",
+        "operator_id": "operator_id",
         "network": "network",
         "chain_id": "chain_id",
         "owner_name": "owner_name",
@@ -138,12 +138,19 @@ def cmd_show(**kwargs: object) -> None:
     cfg = _build_config(kwargs)
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
     try:
-        token, billing = _build_token_and_billing(cfg)
-    except (AuthError, BillingError) as e:
-        _LOG.error("startup failed", error=str(e))
-        sys.exit(EXIT_AUTH if isinstance(e, AuthError) else EXIT_BILLING)
+        auth, billing = _build_auth_and_billing(cfg)
+    except AuthError as e:
+        _LOG.error("auth setup failed", error=str(e))
+        sys.exit(EXIT_AUTH)
 
-    current = _list_with_retry(billing, token, cfg)
+    token = auth.token()
+    try:
+        current = billing.list_validators(
+            token.operator_id, cfg.network, token.access_token
+        )
+    except BillingError as e:
+        _LOG.error("billing list call failed", error=str(e))
+        sys.exit(EXIT_BILLING)
     click.echo(_json.dumps(
         [
             {
@@ -232,22 +239,19 @@ def cmd_sync(
 # ── helpers ───────────────────────────────────────────────────────────────
 
 
-def _build_token_and_billing(
+def _build_auth_and_billing(
     cfg: KeysyncConfig,
 ) -> tuple[AuthClient, BillingClient]:
-    auth = AuthClient(auth_url=cfg.auth_url, api_key=cfg.api_key)
+    auth = AuthClient(api_key=cfg.api_key, operator_id=cfg.operator_id)
     billing = BillingClient(billing_url=cfg.billing_url)
-    # Force the first exchange now so a bad credential fails fast before
-    # we waste a beacon round-trip.
-    auth.token()
     return auth, billing
 
 
 def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, BillingClient]:
     try:
-        auth, billing = _build_token_and_billing(cfg)
+        auth, billing = _build_auth_and_billing(cfg)
     except AuthError as e:
-        _LOG.error("token exchange failed", error=str(e))
+        _LOG.error("auth setup failed", error=str(e))
         sys.exit(EXIT_AUTH)
 
     beacon = BeaconClient(cfg.beacon_url) if cfg.beacon_url else None
@@ -268,33 +272,14 @@ def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, Billin
         sys.exit(EXIT_BEACON)
 
     try:
-        current = _list_with_retry(billing, auth, cfg)
-    except AuthError as e:
-        # _list_with_retry can re-exchange on scope_changed; the second
-        # exchange may surface a different AuthError (revoked between runs,
-        # auth service degraded, …). Without this branch, the AuthError
-        # would crash the process instead of producing a clean EXIT_AUTH.
-        _LOG.error("auth re-exchange during list failed", error=str(e))
-        sys.exit(EXIT_AUTH)
+        token = auth.token()
+        current = billing.list_validators(
+            token.operator_id, cfg.network, token.access_token
+        )
     except BillingError as e:
         _LOG.error("billing list call failed", error=str(e))
         sys.exit(EXIT_BILLING)
     return plan(desired, current), auth, billing
-
-
-def _list_with_retry(
-    billing: BillingClient,
-    auth: AuthClient,
-    cfg: KeysyncConfig,
-) -> list[ValidatorAssignment]:
-    token = auth.token()
-    try:
-        return billing.list_validators(token.operator_id, cfg.network, token.access_token)
-    except ScopeChangedError:
-        _LOG.info("billing reported scope_changed; re-exchanging")
-        auth.invalidate()
-        token = auth.token()
-        return billing.list_validators(token.operator_id, cfg.network, token.access_token)
 
 
 def _print_plan(p: ReconcilePlan) -> None:
@@ -316,15 +301,11 @@ def _apply_plan(
         _LOG.info("nothing to do")
         return
 
-    def with_token(action):
-        token = auth.token()
-        try:
-            return action(token.access_token, token.operator_id)
-        except ScopeChangedError:
-            _LOG.info("scope_changed mid-apply; re-exchanging")
-            auth.invalidate()
-            token = auth.token()
-            return action(token.access_token, token.operator_id)
+    # Direct-auth model: the bearer is the ovi_live_* itself, no
+    # exchange, no expiry, no scope_changed re-fetch branch. Pull
+    # both fields once and pass them through.
+    token = auth.token()
+    bearer, op_id = token.access_token, token.operator_id
 
     # Track progress across the three stages so a failure mid-apply (e.g.
     # billing 5xx after register succeeded) tells the operator exactly
@@ -341,27 +322,19 @@ def _apply_plan(
     }
     try:
         if p.to_register:
-            added, skipped = with_token(
-                lambda bearer, _op: billing.batch_register_keys(p.to_register, bearer)
-            )
+            added, skipped = billing.batch_register_keys(p.to_register, bearer)
             progress["registered_added"] = added
             progress["registered_skipped"] = skipped
             _LOG.info("registered keys", added=added, skipped=skipped)
 
         if p.to_assign:
-            with_token(
-                lambda bearer, op: billing.assign_validators(op, p.to_assign, bearer)
-            )
+            billing.assign_validators(op_id, p.to_assign, bearer)
             progress["assigned"] = len(p.to_assign)
             _LOG.info("assigned validators", count=len(p.to_assign))
 
         if p.to_unassign:
             for idx, cid in p.to_unassign:
-                with_token(
-                    lambda bearer, op, idx=idx, cid=cid: billing.unassign_validator(
-                        op, idx, cid, bearer
-                    )
-                )
+                billing.unassign_validator(op_id, idx, cid, bearer)
                 progress["unassigned"] += 1
             _LOG.info("unassigned validators", count=progress["unassigned"])
     except (BillingError, AuthError) as e:

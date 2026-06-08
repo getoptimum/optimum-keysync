@@ -9,7 +9,6 @@ import respx
 from optimum_keysync.billing_client import (
     BillingClient,
     BillingError,
-    ScopeChangedError,
     ValidatorAssignment,
     ValidatorKeyRegistration,
 )
@@ -42,21 +41,10 @@ def test_list_validators_parses_assignments() -> None:
 
 
 @respx.mock
-def test_scope_changed_raises_dedicated_exception() -> None:
-    respx.get(
-        BILLING_URL + "/api/v1/operators/42/validators"
-    ).mock(
-        return_value=httpx.Response(
-            401, json={"error": "scope_changed", "action": "refresh_token"}
-        )
-    )
-    c = BillingClient(BILLING_URL)
-    with pytest.raises(ScopeChangedError):
-        c.list_validators("42", "mainnet", "jwt-token")
-
-
-@respx.mock
-def test_plain_401_raises_billing_error() -> None:
+def test_401_raises_billing_error() -> None:
+    # Direct-auth model: a 401 from billing means the ovi_live_* was
+    # rejected (unknown / revoked / scoped to a different operator).
+    # No special envelope — just terminal BillingError.
     respx.get(
         BILLING_URL + "/api/v1/operators/42/validators"
     ).mock(

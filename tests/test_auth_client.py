@@ -1,128 +1,51 @@
-"""auth_client tests using respx to stub optimum-auth."""
+"""auth_client tests for the direct-auth path.
+
+The JWT-exchange model is gone (see auth_client.py module docstring),
+so these tests are now trivial: the AuthClient holds an api_key +
+operator_id pair and returns it on every call. The interesting
+behaviour now lives in config validation (covered by test_config.py)
+and in billing_client / cli call sites.
+"""
 
 from __future__ import annotations
 
-import time
-
-import httpx
-import jwt
 import pytest
-import respx
 
-from optimum_keysync.auth_client import TOKEN_PATH, AuthClient, AuthError
-
-AUTH_URL = "https://auth.test"
+from optimum_keysync.auth_client import AuthClient, AuthError
 
 
-def _mint_jwt(operator_id: str = "42") -> str:
-    # Unsigned-style HS256 with a known secret; auth_client decodes without
-    # verifying, so the signature material is irrelevant. The test simply
-    # exercises the claim-extraction code.
-    return jwt.encode(
-        {"sub": "key-id", "operator_id": operator_id, "role": "operator"},
-        "secret",
-        algorithm="HS256",
-    )
+def test_token_returns_the_configured_pair() -> None:
+    c = AuthClient(api_key="ovi_live_test", operator_id="42")
+    t = c.token()
+    assert t.access_token == "ovi_live_test"
+    assert t.operator_id == "42"
 
 
-@respx.mock
-def test_happy_path_extracts_operator_id_and_caches() -> None:
-    body = {
-        "access_token": _mint_jwt(operator_id="42"),
-        "token_type": "Bearer",
-        "expires_in": 3600,
-        "validator_indexes": [],
-    }
-    route = respx.post(AUTH_URL + TOKEN_PATH).mock(
-        return_value=httpx.Response(200, json=body)
-    )
-    c = AuthClient(AUTH_URL, "ovi_live_test")
-    t1 = c.token()
-    t2 = c.token()
-    assert t1.operator_id == "42"
-    assert t1.access_token == body["access_token"]
-    assert t2 is t1, "second call should hit the cache"
-    assert route.call_count == 1
+def test_token_is_stable_across_calls() -> None:
+    """No exchange, no expiry — every call returns the same object so
+    downstream code can hold a reference to it across the reconcile."""
+    c = AuthClient(api_key="ovi_live_test", operator_id="42")
+    assert c.token() is c.token()
 
 
-@respx.mock
-def test_401_surfaces_as_auth_error() -> None:
-    respx.post(AUTH_URL + TOKEN_PATH).mock(
-        return_value=httpx.Response(401, json={"error": "invalid_key"})
-    )
-    c = AuthClient(AUTH_URL, "ovi_live_bad")
-    with pytest.raises(AuthError):
-        c.token()
+def test_empty_api_key_rejected() -> None:
+    with pytest.raises(AuthError, match="api_key"):
+        AuthClient(api_key="", operator_id="42")
 
 
-@respx.mock
-def test_missing_operator_id_in_jwt_is_rejected() -> None:
-    bad_jwt = jwt.encode({"sub": "key-id"}, "s", algorithm="HS256")  # no operator_id
-    respx.post(AUTH_URL + TOKEN_PATH).mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "access_token": bad_jwt,
-                "token_type": "Bearer",
-                "expires_in": 3600,
-                "validator_indexes": [],
-            },
-        )
-    )
-    c = AuthClient(AUTH_URL, "ovi_live_test")
-    with pytest.raises(AuthError):
-        c.token()
+def test_empty_operator_id_rejected() -> None:
+    """operator_id is the path scoper for /operators/{op}/validators; an
+    empty value would produce a 400/404 at billing. Fail fast."""
+    with pytest.raises(AuthError, match="operator_id"):
+        AuthClient(api_key="ovi_live_test", operator_id="")
 
 
-@respx.mock
-def test_invalidate_forces_re_exchange() -> None:
-    body = {
-        "access_token": _mint_jwt(),
-        "token_type": "Bearer",
-        "expires_in": 3600,
-        "validator_indexes": [],
-    }
-    route = respx.post(AUTH_URL + TOKEN_PATH).mock(
-        return_value=httpx.Response(200, json=body)
-    )
-    c = AuthClient(AUTH_URL, "ovi_live_test")
-    c.token()
+def test_invalidate_is_a_safe_noop() -> None:
+    """Kept for call-site compatibility; with no cached JWT to drop,
+    the method does nothing. Calling it shouldn't fail or change the
+    returned token."""
+    c = AuthClient(api_key="ovi_live_test", operator_id="42")
+    before = c.token()
     c.invalidate()
-    c.token()
-    assert route.call_count == 2
-
-
-@respx.mock
-def test_already_expired_jwt_rejected_at_exchange() -> None:
-    """Defense in depth: an expired JWT slipping past a misbehaving
-    optimum-auth (cached 200, replayed body, …) must fail at exchange
-    rather than at the first billing call."""
-    expired = jwt.encode(
-        {"sub": "k", "operator_id": "42", "exp": int(time.time()) - 60},
-        "s",
-        algorithm="HS256",
-    )
-    respx.post(AUTH_URL + TOKEN_PATH).mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "access_token": expired,
-                "token_type": "Bearer",
-                "expires_in": 3600,
-                "validator_indexes": [],
-            },
-        )
-    )
-    c = AuthClient(AUTH_URL, "ovi_live_test")
-    with pytest.raises(AuthError, match="invalid JWT"):
-        c.token()
-
-
-def test_operator_token_is_expiring_predicate() -> None:
-    from optimum_keysync.auth_client import OperatorToken
-
-    now = time.time()
-    fresh = OperatorToken(access_token="t", expires_at=now + 100, operator_id="x")
-    stale = OperatorToken(access_token="t", expires_at=now - 1, operator_id="x")
-    assert not fresh.is_expiring(now)
-    assert stale.is_expiring(now)
+    after = c.token()
+    assert before is after
