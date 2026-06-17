@@ -90,6 +90,28 @@ def test_indices_file_only(tmp_path: Path) -> None:
     assert entries[0].owner_name == "fallback"  # picked up from kwarg
 
 
+_FIXTURE = Path(__file__).parent / "fixtures" / "validators.json"
+
+
+def test_resolve_from_indices_fixture_without_beacon() -> None:
+    """The committed fixture carries both indices and BLS keys, so the full
+    desired set resolves with no beacon node (beacon=None)."""
+    out = resolve(
+        chain_id="0x1",
+        owner_name="fallback",
+        pubkeys_file=None,
+        index_list_file=None,
+        indices_file=_FIXTURE,
+        beacon=None,
+    )
+    entries = {e.validator_index: e for e in out}
+    assert set(entries) == {720396, 720397, 720398}
+    assert entries[720396].validator_key.startswith("0xa1a1")
+    assert entries[720396].owner_name == "acme-mainnet"
+    # The third record omits owner_name, so the resolve() arg fills it in.
+    assert entries[720398].owner_name == "fallback"
+
+
 def test_pubkeys_without_beacon_raises(tmp_path: Path) -> None:
     pubkeys = tmp_path / "p.txt"
     pubkeys.write_text("0x" + "a" * 96 + "\n")
