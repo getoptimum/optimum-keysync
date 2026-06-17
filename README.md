@@ -10,10 +10,11 @@ Given:
 
 - an operator API key (`ovi_live_*`) generated from the Optimum partners
   dashboard,
-- a list of BLS pubkeys the operator owns (newline-separated file) and / or
-  a JSON file of `{validator_index, chain_id, validator_key, owner_name}`
-  tuples,
-- a beacon node URL (for pubkey → index resolution),
+- the validators the operator owns, given as any of: a list of BLS pubkeys
+  (newline-separated file), a list of validator indices (newline-separated
+  file), and / or a JSON file of
+  `{validator_index, chain_id, validator_key, owner_name}` tuples,
+- a beacon node URL (for pubkey ↔ index resolution),
 
 keysync:
 
@@ -26,9 +27,10 @@ keysync:
    (`/api/v1/me`) and scopes the request to the resolved `operator_id`.
    Revoking the key at the dashboard takes effect on keysync's next request
    — no token caching to invalidate.
-3. Resolves the desired validator set: pubkeys against the beacon node's
-   `/eth/v1/beacon/states/head/validators?id=<pubkey>` endpoint, plus
-   anything in the indices JSON.
+3. Resolves the desired validator set against the beacon node's
+   `/eth/v1/beacon/states/head/validators?id=<id>` endpoint (pubkeys
+   resolve to indices, bare indices resolve to pubkeys), plus anything in
+   the indices JSON.
 4. Lists the operator's currently-assigned validators from the console API.
 5. Computes the add / remove deltas.
 6. Under `--apply`, registers any new keys (`POST
@@ -69,8 +71,9 @@ All knobs come from environment variables (and matching flag overrides).
 | `KEYSYNC_NETWORK` | yes | `mainnet`, `hoodi`, etc. |
 | `KEYSYNC_CHAIN_ID` | yes | Corresponding chain ID string |
 | `KEYSYNC_BEACON_URL` | conditional | Needed unless the entire desired set is in the indices file |
-| `KEYSYNC_PUBKEYS_FILE` | conditional | One BLS pubkey per line |
-| `KEYSYNC_INDICES_FILE` | conditional | JSON fallback (air-gapped or pre-computed) |
+| `KEYSYNC_PUBKEYS_FILE` | conditional | One BLS pubkey per line; beacon resolves the index |
+| `KEYSYNC_INDEX_LIST_FILE` | conditional | One validator index per line; beacon resolves the pubkey |
+| `KEYSYNC_INDICES_FILE` | conditional | JSON fallback (air-gapped or pre-computed); no lookup |
 | `KEYSYNC_OWNER_NAME` | yes | Stored in `eth_validator_keys.owner_name` |
 | `KEYSYNC_LOG_FORMAT` | no | `console` (default) or `json` |
 
@@ -100,10 +103,15 @@ wiping out a whole operator's assignments.
   `/eth/v1/beacon/states/head/validators`. Use the beacon-node CLI's
   HTTP-allow flags if you've locked it down (Lighthouse: `--http`,
   `--http-allow-origin`).
-- **Pubkeys vs indices.** Pubkeys are the human-friendly input — the BLS
-  public key on every keystore JSON. Indices are the uint64 the beacon
-  chain assigns at activation. keysync resolves pubkeys to indices via
-  the beacon node so customers only need to maintain the pubkey list.
+- **Pubkeys vs indices.** Pubkeys are the BLS public key on every keystore
+  JSON; indices are the uint64 the beacon chain assigns at activation.
+  keysync resolves between the two via the beacon node, so you can maintain
+  whichever list you already have: `KEYSYNC_PUBKEYS_FILE` (pubkey → index)
+  or `KEYSYNC_INDEX_LIST_FILE` (index → pubkey). Both require
+  `KEYSYNC_BEACON_URL`. `KEYSYNC_INDICES_FILE` is the no-lookup escape
+  hatch (a full JSON of pre-computed records for air-gapped setups), and it
+  wins over a beacon-resolved hit for the same `(validator_index, chain_id)`.
+  All three may be combined.
 
 ## Examples
 

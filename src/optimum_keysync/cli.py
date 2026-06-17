@@ -84,13 +84,20 @@ def _common_options(fn):
         "--beacon-url",
         envvar="KEYSYNC_BEACON_URL",
         default=None,
-        help="beacon node URL — required if pubkeys-file is used",
+        help="beacon node URL; required if pubkeys-file or index-list-file is used",
     )(fn)
     fn = click.option(
         "--pubkeys-file",
         envvar="KEYSYNC_PUBKEYS_FILE",
         type=click.Path(path_type=Path, dir_okay=False),
         default=None,
+    )(fn)
+    fn = click.option(
+        "--index-list-file",
+        envvar="KEYSYNC_INDEX_LIST_FILE",
+        type=click.Path(path_type=Path, dir_okay=False),
+        default=None,
+        help="one validator index per line; resolved to pubkeys via the beacon node",
     )(fn)
     fn = click.option(
         "--indices-file",
@@ -121,6 +128,7 @@ def _build_config(kwargs: dict[str, object]) -> KeysyncConfig:
         "owner_name": "owner_name",
         "beacon_url": "beacon_url",
         "pubkeys_file": "pubkeys_file",
+        "index_list_file": "index_list_file",
         "indices_file": "indices_file",
         "log_format": "log_format",
     }
@@ -298,6 +306,7 @@ def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, Billin
             chain_id=cfg.chain_id,
             owner_name=cfg.owner_name,
             pubkeys_file=cfg.pubkeys_file,
+            index_list_file=cfg.index_list_file,
             indices_file=cfg.indices_file,
             beacon=beacon,
         )

@@ -1,0 +1,19 @@
+[
+  {
+    "validator_index": 720396,
+    "chain_id": "0x1",
+    "validator_key": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "owner_name": "acme-mainnet"
+  },
+  {
+    "validator_index": 720397,
+    "chain_id": "0x1",
+    "validator_key": "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+    "owner_name": "acme-mainnet"
+  },
+  {
+    "validator_index": 720398,
+    "chain_id": "0x1",
+    "validator_key": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+  }
+]

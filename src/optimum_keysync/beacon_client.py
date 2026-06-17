@@ -34,8 +34,8 @@ _LOG = get_logger(__name__)
 
 # Most beacon nodes (Lighthouse, Prysm, Teku, Nimbus) accept up to ~64 ids in
 # a single request; we chunk at 32 to stay well under the default URL length
-# cap on all implementations.
-_PUBKEY_CHUNK_SIZE = 32
+# cap on all implementations. Applies to both pubkey and index ids.
+_ID_CHUNK_SIZE = 32
 
 # Status values that count as "the operator currently owns this validator"
 # for billing scope. Centralised so a future tweak (e.g. excluding
@@ -71,7 +71,13 @@ class _RetryableBeaconError(RuntimeError):
 
 
 class BeaconClient:
-    """Resolves BLS pubkeys to validator indices via a beacon node."""
+    """Resolves BLS pubkeys ↔ validator indices via a beacon node.
+
+    The `validators` endpoint accepts either form as `id` and returns both
+    fields, so resolution works in both directions off the same request
+    path: pubkey → index (`resolve_pubkeys`) and index → pubkey
+    (`resolve_indices`).
+    """
 
     def __init__(
         self,
@@ -95,7 +101,7 @@ class BeaconClient:
         """
         normalised = [self._normalise(pk) for pk in pubkeys]
         seen: dict[str, BeaconValidator] = {}
-        for chunk in _chunks(normalised, _PUBKEY_CHUNK_SIZE):
+        for chunk in _chunks(normalised, _ID_CHUNK_SIZE):
             for v in self._fetch_chunk(chunk):
                 seen[v.pubkey] = v
 
@@ -111,15 +117,47 @@ class BeaconClient:
 
         return [v for v in seen.values() if v.status in _INCLUDED_STATUSES]
 
+    def resolve_indices(self, indices: Sequence[int]) -> list[BeaconValidator]:
+        """Resolve a validator-index list to (index, pubkey, status) triples.
+
+        The mirror of `resolve_pubkeys` for operators who track validators
+        by index rather than BLS pubkey. The beacon `validators` endpoint
+        takes the index as `id` and returns the pubkey the billing register
+        call needs, so this fills the field keysync would otherwise require
+        the operator to supply.
+
+        Indices the beacon node doesn't know (not yet activated, or typos)
+        are omitted and surfaced at warning level, same as `resolve_pubkeys`.
+        """
+        normalised = [self._normalise_index(i) for i in indices]
+        seen: dict[int, BeaconValidator] = {}
+        for chunk in _chunks([str(i) for i in normalised], _ID_CHUNK_SIZE):
+            for v in self._fetch_chunk(chunk):
+                seen[v.validator_index] = v
+
+        missing = [i for i in normalised if i not in seen]
+        if missing:
+            _LOG.warning(
+                "beacon node has no record for some indices "
+                "(unactivated deposits, or typos in index list)",
+                missing_count=len(missing),
+                total=len(normalised),
+                sample=missing[:3],
+            )
+
+        return [v for v in seen.values() if v.status in _INCLUDED_STATUSES]
+
     @tenacity.retry(
         retry=tenacity.retry_if_exception_type((httpx.TransportError, _RetryableBeaconError)),
         wait=tenacity.wait_exponential(multiplier=1, max=20),
         stop=tenacity.stop_after_attempt(3),
         reraise=True,
     )
-    def _fetch_chunk(self, pubkeys: Sequence[str]) -> list[BeaconValidator]:
+    def _fetch_chunk(self, ids: Sequence[str]) -> list[BeaconValidator]:
+        # `ids` are beacon `id` values: normalised pubkeys or stringified
+        # validator indices. The endpoint accepts both.
         params: list[tuple[str, str | int | float | bool | None]] = [
-            ("id", pk) for pk in pubkeys
+            ("id", i) for i in ids
         ]
         url = self._beacon_url + "/eth/v1/beacon/states/head/validators"
         resp = self._client.get(url, params=params)
@@ -167,6 +205,15 @@ class BeaconClient:
         except ValueError as e:
             raise ValueError(f"BLS pubkey is not valid hex: {pubkey!r}") from e
         return pk
+
+    @staticmethod
+    def _normalise_index(index: int) -> int:
+        # Guard the trust boundary the same way `_normalise` does for
+        # pubkeys: reject negatives before they reach the beacon node.
+        i = int(index)
+        if i < 0:
+            raise ValueError(f"validator index must be non-negative: {index!r}")
+        return i
 
 
 def _chunks(seq: Sequence[str], size: int) -> list[list[str]]:

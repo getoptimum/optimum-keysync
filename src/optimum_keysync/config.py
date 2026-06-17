@@ -86,6 +86,11 @@ class KeysyncConfig(BaseModel):
 
     beacon_url: str | None = None
     pubkeys_file: Path | None = None
+    # index_list_file is the index → pubkey counterpart of pubkeys_file:
+    # a plain newline-separated list of validator indices, resolved to
+    # pubkeys via the beacon node. Distinct from indices_file (a full
+    # JSON of pre-computed records that needs no lookup).
+    index_list_file: Path | None = None
     indices_file: Path | None = None
 
     log_format: str = "console"
@@ -103,11 +108,22 @@ class KeysyncConfig(BaseModel):
 
     @model_validator(mode="after")
     def _at_least_one_source(self) -> KeysyncConfig:
-        if not self.indices_file and not (self.beacon_url and self.pubkeys_file):
+        # pubkeys_file and index_list_file are both beacon-resolved, so the
+        # beacon URL is mandatory whenever either is set, even alongside an
+        # indices_file. Enforce here rather than letting resolve() fail later.
+        beacon_input = self.pubkeys_file is not None or self.index_list_file is not None
+        if beacon_input and not self.beacon_url:
             raise ValueError(
-                "supply either KEYSYNC_INDICES_FILE, or both "
-                "KEYSYNC_BEACON_URL and KEYSYNC_PUBKEYS_FILE — there is no "
-                "way to compute the desired validator set otherwise"
+                "KEYSYNC_BEACON_URL is required when KEYSYNC_PUBKEYS_FILE "
+                "or KEYSYNC_INDEX_LIST_FILE is set; those inputs are resolved "
+                "against the beacon node"
+            )
+        if not self.indices_file and not beacon_input:
+            raise ValueError(
+                "supply either KEYSYNC_INDICES_FILE, or KEYSYNC_BEACON_URL "
+                "together with KEYSYNC_PUBKEYS_FILE and/or "
+                "KEYSYNC_INDEX_LIST_FILE. There is no way to compute the "
+                "desired validator set otherwise"
             )
         if not self.api_key.startswith("ovi_"):
             raise ValueError(
@@ -154,6 +170,7 @@ def from_env(overrides: dict[str, str | Path | None] | None = None) -> KeysyncCo
         owner_name=pick("owner_name") or "",
         beacon_url=pick("beacon_url"),
         pubkeys_file=pick_path("pubkeys_file"),
+        index_list_file=pick_path("index_list_file"),
         indices_file=pick_path("indices_file"),
         log_format=pick("log_format") or "console",
     )

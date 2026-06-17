@@ -32,6 +32,10 @@ spec:
                   subPath: validators.pubkeys
                   readOnly: true
               env:
+                # This example uses a pubkeys file. As an alternative, operators
+                # who track validators by index can instead mount a
+                # newline-separated index list and set KEYSYNC_INDEX_LIST_FILE;
+                # keysync resolves the pubkeys via the beacon node.
                 - name: KEYSYNC_PUBKEYS_FILE
                   value: /etc/optimum/validators.pubkeys
           volumes:
