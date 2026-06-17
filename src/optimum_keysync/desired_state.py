@@ -102,7 +102,7 @@ def resolve(
     if index_list_file is not None:
         if beacon is None:
             raise ValueError(
-                "index_list_file given but no beacon client configured — "
+                "index_list_file given but no beacon client configured; "
                 "cannot resolve validator_indexes to pubkeys"
             )
         indices = _read_index_list(index_list_file)
@@ -141,12 +141,11 @@ def _read_index_list(path: Path) -> list[int]:
         s = raw.strip()
         if not s or s.startswith("#"):
             continue
-        try:
-            out.append(int(s))
-        except ValueError as e:
-            raise ValueError(
-                f"{path}:{lineno} is not a validator index: {raw!r}"
-            ) from e
+        # Plain decimal digits only: int() would otherwise accept "4_2",
+        # "+5" and unicode digits, masking a typo as a valid-looking index.
+        if not (s.isascii() and s.isdigit()):
+            raise ValueError(f"{path}:{lineno} is not a validator index: {raw!r}")
+        out.append(int(s))
     return out
 
 

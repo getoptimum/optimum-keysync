@@ -28,8 +28,8 @@ keysync:
    Revoking the key at the dashboard takes effect on keysync's next request
    — no token caching to invalidate.
 3. Resolves the desired validator set against the beacon node's
-   `/eth/v1/beacon/states/head/validators?id=<id>` endpoint — pubkeys
-   resolve to indices, bare indices resolve to pubkeys — plus anything in
+   `/eth/v1/beacon/states/head/validators?id=<id>` endpoint (pubkeys
+   resolve to indices, bare indices resolve to pubkeys), plus anything in
    the indices JSON.
 4. Lists the operator's currently-assigned validators from the console API.
 5. Computes the add / remove deltas.
@@ -109,7 +109,7 @@ wiping out a whole operator's assignments.
   whichever list you already have: `KEYSYNC_PUBKEYS_FILE` (pubkey → index)
   or `KEYSYNC_INDEX_LIST_FILE` (index → pubkey). Both require
   `KEYSYNC_BEACON_URL`. `KEYSYNC_INDICES_FILE` is the no-lookup escape
-  hatch — a full JSON of pre-computed records for air-gapped setups — and
+  hatch (a full JSON of pre-computed records for air-gapped setups), and it
   wins over a beacon-resolved hit for the same `(validator_index, chain_id)`.
   All three may be combined.
 

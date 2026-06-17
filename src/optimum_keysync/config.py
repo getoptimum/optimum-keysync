@@ -113,7 +113,7 @@ class KeysyncConfig(BaseModel):
             raise ValueError(
                 "supply either KEYSYNC_INDICES_FILE, or KEYSYNC_BEACON_URL "
                 "together with KEYSYNC_PUBKEYS_FILE and/or "
-                "KEYSYNC_INDEX_LIST_FILE — there is no way to compute the "
+                "KEYSYNC_INDEX_LIST_FILE. There is no way to compute the "
                 "desired validator set otherwise"
             )
         if not self.api_key.startswith("ovi_"):

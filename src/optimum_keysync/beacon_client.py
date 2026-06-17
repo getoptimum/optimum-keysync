@@ -154,8 +154,8 @@ class BeaconClient:
         reraise=True,
     )
     def _fetch_chunk(self, ids: Sequence[str]) -> list[BeaconValidator]:
-        # `ids` are beacon `id` values — either normalised pubkeys or
-        # stringified validator indices; the endpoint accepts both.
+        # `ids` are beacon `id` values: normalised pubkeys or stringified
+        # validator indices. The endpoint accepts both.
         params: list[tuple[str, str | int | float | bool | None]] = [
             ("id", i) for i in ids
         ]

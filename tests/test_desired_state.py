@@ -181,6 +181,24 @@ def test_index_list_rejects_non_integer_line(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("line", ["4_2", "+5", "0x2a", "42.0", "-5"])
+def test_index_list_rejects_int_parsing_surprises(tmp_path: Path, line: str) -> None:
+    """int() accepts underscores, signs and hex; the boundary must not, so a
+    typo surfaces as an error instead of a valid-looking index."""
+    index_list = tmp_path / "indices.txt"
+    index_list.write_text(f"{line}\n")
+    beacon = _StubBeacon([])
+    with pytest.raises(ValueError, match="not a validator index"):
+        resolve(
+            chain_id="0x1",
+            owner_name="x",
+            pubkeys_file=None,
+            index_list_file=index_list,
+            indices_file=None,
+            beacon=beacon,  # type: ignore[arg-type]
+        )
+
+
 def test_beacon_normalise_rejects_non_hex_pubkey(tmp_path: Path) -> None:
     """A typo'd pubkey (non-hex char) must fail at the trust boundary,
     not silently propagate to the beacon node."""
