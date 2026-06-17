@@ -14,8 +14,13 @@ from optimum_keysync.desired_state import DesiredSet, DesiredValidator, resolve
 class _StubBeacon:
     def __init__(self, validators: list[BeaconValidator]) -> None:
         self._validators = validators
+        self.resolved_indices: list[int] | None = None
 
     def resolve_pubkeys(self, _pubkeys):
+        return self._validators
+
+    def resolve_indices(self, indices):
+        self.resolved_indices = list(indices)
         return self._validators
 
 
@@ -50,6 +55,7 @@ def test_dedup_indices_file_overrides_beacon(tmp_path: Path) -> None:
         chain_id="0x1",
         owner_name="default",
         pubkeys_file=pubkeys,
+        index_list_file=None,
         indices_file=indices,
         beacon=beacon,  # type: ignore[arg-type]
     )
@@ -76,6 +82,7 @@ def test_indices_file_only(tmp_path: Path) -> None:
         chain_id="0x1",
         owner_name="fallback",
         pubkeys_file=None,
+        index_list_file=None,
         indices_file=indices,
         beacon=None,
     )
@@ -91,6 +98,7 @@ def test_pubkeys_without_beacon_raises(tmp_path: Path) -> None:
             chain_id="0x1",
             owner_name="x",
             pubkeys_file=pubkeys,
+            index_list_file=None,
             indices_file=None,
             beacon=None,
         )
@@ -106,11 +114,71 @@ def test_pubkeys_file_skips_blank_and_comment_lines(tmp_path: Path) -> None:
         chain_id="0x1",
         owner_name="x",
         pubkeys_file=pubkeys,
+        index_list_file=None,
         indices_file=None,
         beacon=beacon,  # type: ignore[arg-type]
     )
     # Just asserts no exception. Real assertion would require a stub that
     # asserts what was passed; the unit boundary here is the file parse.
+
+
+def test_index_list_resolves_pubkeys_via_beacon(tmp_path: Path) -> None:
+    # The index → pubkey direction: operator supplies bare indices, beacon
+    # fills in the BLS key the registration needs.
+    beacon = _StubBeacon(
+        [
+            BeaconValidator(
+                validator_index=42,
+                pubkey="0x" + "a" * 96,
+                status="active_ongoing",
+            )
+        ]
+    )
+    index_list = tmp_path / "indices.txt"
+    index_list.write_text("\n# comment\n42\n  \n")
+    out = resolve(
+        chain_id="0x1",
+        owner_name="acme",
+        pubkeys_file=None,
+        index_list_file=index_list,
+        indices_file=None,
+        beacon=beacon,  # type: ignore[arg-type]
+    )
+    entries = list(out)
+    assert beacon.resolved_indices == [42]  # blank/comment lines dropped
+    assert len(entries) == 1
+    assert entries[0].validator_index == 42
+    assert entries[0].validator_key == "0x" + "a" * 96
+    assert entries[0].owner_name == "acme"
+
+
+def test_index_list_without_beacon_raises(tmp_path: Path) -> None:
+    index_list = tmp_path / "indices.txt"
+    index_list.write_text("42\n")
+    with pytest.raises(ValueError, match="no beacon client"):
+        resolve(
+            chain_id="0x1",
+            owner_name="x",
+            pubkeys_file=None,
+            index_list_file=index_list,
+            indices_file=None,
+            beacon=None,
+        )
+
+
+def test_index_list_rejects_non_integer_line(tmp_path: Path) -> None:
+    index_list = tmp_path / "indices.txt"
+    index_list.write_text("42\nnot-a-number\n")
+    beacon = _StubBeacon([])
+    with pytest.raises(ValueError, match="not a validator index"):
+        resolve(
+            chain_id="0x1",
+            owner_name="x",
+            pubkeys_file=None,
+            index_list_file=index_list,
+            indices_file=None,
+            beacon=beacon,  # type: ignore[arg-type]
+        )
 
 
 def test_beacon_normalise_rejects_non_hex_pubkey(tmp_path: Path) -> None:

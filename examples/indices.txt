@@ -1,0 +1,5 @@
+# One validator index per line. Comments (lines starting with #) and blank
+# lines are ignored. keysync resolves each index to its BLS pubkey via the
+# beacon node, so KEYSYNC_BEACON_URL is required when using this file.
+720396
+720397

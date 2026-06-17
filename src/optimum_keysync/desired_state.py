@@ -73,6 +73,7 @@ def resolve(
     chain_id: str,
     owner_name: str,
     pubkeys_file: Path | None,
+    index_list_file: Path | None,
     indices_file: Path | None,
     beacon: BeaconClient | None,
 ) -> DesiredSet:
@@ -98,6 +99,25 @@ def resolve(
                     )
                 )
 
+    if index_list_file is not None:
+        if beacon is None:
+            raise ValueError(
+                "index_list_file given but no beacon client configured — "
+                "cannot resolve validator_indexes to pubkeys"
+            )
+        indices = _read_index_list(index_list_file)
+        if indices:
+            _LOG.info("resolving indices via beacon", count=len(indices))
+            for v in beacon.resolve_indices(indices):
+                entries.append(
+                    DesiredValidator(
+                        validator_index=v.validator_index,
+                        chain_id=chain_id,
+                        validator_key=v.pubkey,
+                        owner_name=owner_name,
+                    )
+                )
+
     if indices_file is not None:
         for e in _read_indices(indices_file, fallback_owner_name=owner_name):
             entries.append(e)
@@ -112,6 +132,21 @@ def _read_pubkeys(path: Path) -> list[str]:
         if not s or s.startswith("#"):
             continue
         out.append(s)
+    return out
+
+
+def _read_index_list(path: Path) -> list[int]:
+    out: list[int] = []
+    for lineno, raw in enumerate(path.read_text().splitlines(), start=1):
+        s = raw.strip()
+        if not s or s.startswith("#"):
+            continue
+        try:
+            out.append(int(s))
+        except ValueError as e:
+            raise ValueError(
+                f"{path}:{lineno} is not a validator index: {raw!r}"
+            ) from e
     return out
 
 

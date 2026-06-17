@@ -132,6 +132,28 @@ def test_apply_plan_assign_failure_skips_unassign() -> None:
     assert billing.unassigned == []  # stage 3 skipped
 
 
+def test_build_config_threads_index_list_file(tmp_path: Any) -> None:
+    """The --index-list-file flag must reach KeysyncConfig.index_list_file."""
+    from optimum_keysync.cli import _build_config
+
+    index_list = tmp_path / "indices.txt"
+    index_list.write_text("1\n")
+    cfg = _build_config(
+        {
+            "api_url": "https://console.test",
+            "auth_url": "https://auth.test",
+            "api_key": "ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "operator_id": "42",
+            "network": "mainnet",
+            "chain_id": "0x1",
+            "owner_name": "acme",
+            "beacon_url": "https://beacon.test",
+            "index_list_file": index_list,
+        }
+    )
+    assert cfg.index_list_file == index_list
+
+
 def test_apply_plan_noop_short_circuits() -> None:
     billing = _StubBilling()
     auth = _StubAuth()

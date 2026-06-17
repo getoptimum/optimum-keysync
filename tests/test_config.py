@@ -35,6 +35,22 @@ def test_pubkeys_file_plus_beacon_is_accepted(tmp_path: Path) -> None:
     assert cfg.beacon_url == "http://localhost:5052"
 
 
+def test_index_list_file_plus_beacon_is_accepted(tmp_path: Path) -> None:
+    index_list = tmp_path / "indices.txt"
+    index_list.write_text("")
+    cfg = from_env(
+        {**_BASE, "beacon_url": "http://localhost:5052", "index_list_file": index_list}
+    )
+    assert cfg.index_list_file == index_list
+
+
+def test_index_list_file_without_beacon_is_rejected(tmp_path: Path) -> None:
+    index_list = tmp_path / "indices.txt"
+    index_list.write_text("")
+    with pytest.raises(ValueError):
+        from_env({**_BASE, "index_list_file": index_list})
+
+
 def test_pubkeys_file_without_beacon_is_rejected(tmp_path: Path) -> None:
     pubkeys = tmp_path / "x.txt"
     pubkeys.write_text("")
