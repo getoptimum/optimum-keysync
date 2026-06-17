@@ -25,7 +25,7 @@ def _opts(indices_path: Path) -> list[str]:
     """Per-test option list. indices_path is per-test (tmp_path fixture)
     so parallel runs don't trample each other's files."""
     return [
-        "--billing-url", "https://billing.test",
+        "--api-url", "https://api.test",
         "--auth-url", "https://auth.test",
         "--api-key", "ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "--network", "mainnet",
@@ -50,7 +50,7 @@ def test_show_without_operator_id_calls_auth_me_then_lists(indices_file: Path) -
     me_route = respx.get("https://auth.test/api/v1/me").mock(
         return_value=httpx.Response(200, json={"operator_id": "42", "role": "operator"})
     )
-    list_route = respx.get("https://billing.test/api/v1/operators/42/validators").mock(
+    list_route = respx.get("https://api.test/api/v1/operators/42/validators").mock(
         return_value=httpx.Response(
             200, json={"operator_id": "42", "network": "mainnet", "validators": []}
         )
@@ -70,7 +70,7 @@ def test_show_with_explicit_operator_id_skips_auth_me(indices_file: Path) -> Non
     me_route = respx.get("https://auth.test/api/v1/me").mock(
         return_value=httpx.Response(500, text="should not be called")
     )
-    list_route = respx.get("https://billing.test/api/v1/operators/7/validators").mock(
+    list_route = respx.get("https://api.test/api/v1/operators/7/validators").mock(
         return_value=httpx.Response(
             200, json={"operator_id": "7", "network": "mainnet", "validators": []}
         )
@@ -112,7 +112,7 @@ def test_diff_without_operator_id_calls_auth_me(indices_file: Path) -> None:
     me_route = respx.get("https://auth.test/api/v1/me").mock(
         return_value=httpx.Response(200, json={"operator_id": "42", "role": "operator"})
     )
-    list_route = respx.get("https://billing.test/api/v1/operators/42/validators").mock(
+    list_route = respx.get("https://api.test/api/v1/operators/42/validators").mock(
         return_value=httpx.Response(
             200, json={"operator_id": "42", "network": "mainnet", "validators": []}
         )

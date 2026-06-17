@@ -9,7 +9,7 @@ import pytest
 from optimum_keysync.config import KeysyncConfig, from_env
 
 _BASE: dict[str, str | Path] = {
-    "billing_url": "https://billing.example",
+    "api_url": "https://billing.example",
     "auth_url": "https://auth.example",
     "api_key": "ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "operator_id": "42",
@@ -99,14 +99,14 @@ def test_plaintext_auth_url_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_plaintext_billing_url_rejected(tmp_path: Path) -> None:
+def test_plaintext_api_url_rejected(tmp_path: Path) -> None:
     indices = tmp_path / "i.json"
     indices.write_text("[]")
     with pytest.raises(ValueError, match="must use https"):
         from_env(
             {
                 **_BASE,
-                "billing_url": "http://billing.example.com",
+                "api_url": "http://billing.example.com",
                 "indices_file": indices,
             }
         )
@@ -118,11 +118,11 @@ def test_plaintext_loopback_allowed_for_dev(tmp_path: Path) -> None:
     cfg = from_env(
         {
             **_BASE,
-            "billing_url": "http://127.0.0.1:8080",
+            "api_url": "http://127.0.0.1:8080",
             "indices_file": indices,
         }
     )
-    assert cfg.billing_url == "http://127.0.0.1:8080"
+    assert cfg.api_url == "http://127.0.0.1:8080"
 
 
 def test_userinfo_in_url_rejected(tmp_path: Path) -> None:
@@ -138,7 +138,7 @@ def test_userinfo_in_url_rejected(tmp_path: Path) -> None:
         "https://localhost@evil.example.com",
     ):
         with pytest.raises(ValueError, match="userinfo"):
-            from_env({**_BASE, "billing_url": url, "indices_file": indices})
+            from_env({**_BASE, "api_url": url, "indices_file": indices})
 
 
 def test_plaintext_beacon_url_rejected(tmp_path: Path) -> None:
@@ -157,7 +157,7 @@ def test_plaintext_beacon_url_rejected(tmp_path: Path) -> None:
 def test_owner_name_length_capped() -> None:
     with pytest.raises(ValueError):
         KeysyncConfig(
-            billing_url="https://b",
+            api_url="https://b",
             auth_url="https://a",
             api_key="ovi_live_xxxxxxxxxxxxxxxxxxxx",
             operator_id="42",

@@ -10,7 +10,7 @@ Lives in its own module rather than alongside `billing_client` because
 it talks to a different host (the Cloudflare Worker, not the Go
 service); keeping them separate makes the host targeting obvious at
 the call site (`IdentityClient(cfg.auth_url)` vs
-`BillingClient(cfg.billing_url)`).
+`BillingClient(cfg.api_url)`).
 
 Retry policy + exception envelope mirror `billing_client` so the CLI's
 exit-code mapping stays uniform.
