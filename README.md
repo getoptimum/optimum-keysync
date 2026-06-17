@@ -1,122 +1,126 @@
 # optimum-keysync
 
 Reconcile a customer's Ethereum validator set against Optimum's validator
-registry. One-shot CLI that's safe to run on a cron / systemd timer / k8s
-CronJob — `--dry-run` by default, `--apply` to mutate.
-
-## What it does
-
-Given:
-
-- an operator API key (`ovi_live_*`) generated from the Optimum partners
-  dashboard,
-- the validators the operator owns, given as any of: a list of BLS pubkeys
-  (newline-separated file), a list of validator indices (newline-separated
-  file), and / or a JSON file of
-  `{validator_index, chain_id, validator_key, owner_name}` tuples,
-- a beacon node URL (for pubkey ↔ index resolution),
-
-keysync:
-
-1. Resolves the caller's `operator_id` by calling `GET /api/v1/me` on
-   `optimum-auth` (the same `ovi_live_*` as the Bearer). The result is
-   cached for the rest of the process. `KEYSYNC_OPERATOR_ID` can be set
-   explicitly to skip this step.
-2. Presents the `ovi_live_*` directly to the Optimum **console API** as the
-   Bearer on every call. The console verifies the key via optimum-auth
-   (`/api/v1/me`) and scopes the request to the resolved `operator_id`.
-   Revoking the key at the dashboard takes effect on keysync's next request
-   — no token caching to invalidate.
-3. Resolves the desired validator set against the beacon node's
-   `/eth/v1/beacon/states/head/validators?id=<id>` endpoint (pubkeys
-   resolve to indices, bare indices resolve to pubkeys), plus anything in
-   the indices JSON.
-4. Lists the operator's currently-assigned validators from the console API.
-5. Computes the add / remove deltas.
-6. Under `--apply`, registers any new keys (`POST
-   /api/v1/validator-keys/batch` — idempotent server-side), assigns them
-   to the operator, and unassigns anything that disappeared from the
-   desired set.
-
-Re-runs are idempotent: a steady state reports `added=0, removed=0`.
+registry. A one-shot CLI, safe to run on a cron / systemd timer / k8s CronJob:
+`--dry-run` by default, `--apply` to write.
 
 ## Quickstart
 
 ```bash
 pip install optimum-keysync
+```
 
+Point keysync at the Optimum APIs and tell it which validators you own. The
+fastest path is a file of BLS pubkeys plus a beacon node (keysync looks up the
+indices for you):
+
+```bash
 export KEYSYNC_API_URL=https://console.getoptimum.io
 export KEYSYNC_AUTH_URL=https://auth.getoptimum.io
 export KEYSYNC_API_KEY=ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 export KEYSYNC_NETWORK=mainnet
 export KEYSYNC_CHAIN_ID=0x1
-export KEYSYNC_BEACON_URL=http://localhost:5052
-export KEYSYNC_PUBKEYS_FILE=/etc/optimum/validators.pubkeys
 export KEYSYNC_OWNER_NAME="acme-mainnet"
+export KEYSYNC_BEACON_URL=http://localhost:5052
+export KEYSYNC_PUBKEYS_FILE=/etc/optimum/validators.pubkeys   # one pubkey per line
 
-keysync diff           # print the planned delta
-keysync sync --apply   # write the delta to the registry
+keysync diff           # preview the planned changes, no writes
+keysync sync --apply   # apply them
 ```
+
+Get `KEYSYNC_API_KEY` (an `ovi_live_*` key) from the Optimum partners dashboard.
+That is the only secret; everything else is non-sensitive config. Re-runs are
+idempotent, so a steady state reports nothing to do.
+
+## Telling keysync which validators you own
+
+Pick whichever list you already have. All three may be combined.
+
+| Source | Env var | Format | Beacon node |
+| --- | --- | --- | --- |
+| BLS pubkeys | `KEYSYNC_PUBKEYS_FILE` | one pubkey per line | required (resolves the index) |
+| Validator indices | `KEYSYNC_INDEX_LIST_FILE` | one index per line | required (resolves the pubkey) |
+| Pre-computed records | `KEYSYNC_INDICES_FILE` | JSON of `{validator_index, chain_id, validator_key, owner_name}` | not used |
+
+`KEYSYNC_INDICES_FILE` is the no-lookup option for air-gapped setups, and it
+wins over a beacon-resolved hit for the same `(validator_index, chain_id)`. See
+`examples/` for a sample of each format.
 
 ## Configuration
 
-All knobs come from environment variables (and matching flag overrides).
+All settings come from environment variables, each with a matching flag override
+(the flag wins).
 
 | Env var | Required | Purpose |
 | --- | --- | --- |
 | `KEYSYNC_API_URL` | yes | Optimum console API base URL (validator endpoints) |
 | `KEYSYNC_AUTH_URL` | yes | Auth API base URL (used for `GET /api/v1/me`) |
 | `KEYSYNC_API_KEY` | yes | `ovi_live_*` from the partners dashboard |
-| `KEYSYNC_OPERATOR_ID` | no | Auto-resolved via `GET /api/v1/me`. Set explicitly to skip the lookup (one round-trip saved) or to pin the scope. |
 | `KEYSYNC_NETWORK` | yes | `mainnet`, `hoodi`, etc. |
 | `KEYSYNC_CHAIN_ID` | yes | Corresponding chain ID string |
-| `KEYSYNC_BEACON_URL` | conditional | Needed unless the entire desired set is in the indices file |
+| `KEYSYNC_OWNER_NAME` | yes | Stored in `eth_validator_keys.owner_name` |
+| `KEYSYNC_BEACON_URL` | conditional | Required when using a pubkeys or index-list file |
 | `KEYSYNC_PUBKEYS_FILE` | conditional | One BLS pubkey per line; beacon resolves the index |
 | `KEYSYNC_INDEX_LIST_FILE` | conditional | One validator index per line; beacon resolves the pubkey |
-| `KEYSYNC_INDICES_FILE` | conditional | JSON fallback (air-gapped or pre-computed); no lookup |
-| `KEYSYNC_OWNER_NAME` | yes | Stored in `eth_validator_keys.owner_name` |
+| `KEYSYNC_INDICES_FILE` | conditional | Pre-computed JSON records; no lookup |
+| `KEYSYNC_OPERATOR_ID` | no | Auto-resolved via `GET /api/v1/me`. Set to skip the lookup or pin the scope. |
 | `KEYSYNC_LOG_FORMAT` | no | `console` (default) or `json` |
 
-## CLI
+## Commands
 
 ```
-keysync sync   [--apply] [--dry-run] [--max-deletes N] [--log-format json]
-keysync show                        # prints currently assigned validators
-keysync diff                        # prints the planned delta, no writes
+keysync diff                  # print the planned add/remove delta, no writes
+keysync sync [--apply]        # reconcile; --dry-run by default, --apply to write
+keysync show                  # print currently-assigned validators
 ```
 
-`--max-deletes` (default 10) refuses to unassign more validators than that
-in a single run. Bump it explicitly with `--max-deletes <n>` when a large
-exit is expected. This is the guardrail against a misconfigured input
-wiping out a whole operator's assignments.
+`keysync sync` also takes `--dry-run` (forces no-write, wins over `--apply`),
+`--max-deletes N` (default 10), and `--log-format json`.
+
+`--max-deletes` is the guardrail against a misconfigured input wiping out an
+operator's assignments: keysync refuses to unassign more than N validators in a
+single run. Bump it when a large exit is expected.
+
+## What it does
+
+1. Resolves your `operator_id` from the API key via `GET /api/v1/me` on
+   optimum-auth (or uses `KEYSYNC_OPERATOR_ID` if set).
+2. Resolves the desired validator set from your input files, querying the beacon
+   node's `/eth/v1/beacon/states/head/validators` endpoint as needed (pubkey to
+   index, or index to pubkey).
+3. Lists your currently-assigned validators from the console API and computes the
+   add / remove delta.
+4. Under `--apply`, registers new keys, assigns them, and unassigns anything that
+   left the desired set. Each stage is idempotent server-side.
+
+The `ovi_live_*` key is the Bearer on every console API call (no JWT exchange, no
+token caching), so revoking it at the dashboard takes effect on the next run.
+
+## Exit codes
+
+Wire alerts on these:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | success |
+| 2 | auth / identity failure |
+| 3 | billing / console API failure |
+| 4 | configuration error |
+| 5 | `--max-deletes` guardrail tripped |
+| 6 | beacon node failure |
 
 ## Operating notes
 
-- **The `ovi_live_*` is the Bearer on every console API call** — no JWT
-  exchange, no token caching. The console (via optimum-auth) rejects revoked
-  keys on the next request, so revocation at the dashboard takes effect
-  immediately.
-- **Tenacity wraps HTTP** — exponential backoff on 5xx / 429 / network
-  errors only. Other 4xx surfaces immediately so a misconfiguration
-  fails fast rather than retrying into a rate-limit.
-- **Beacon nodes** must allow unauthenticated reads on
-  `/eth/v1/beacon/states/head/validators`. Use the beacon-node CLI's
-  HTTP-allow flags if you've locked it down (Lighthouse: `--http`,
-  `--http-allow-origin`).
-- **Pubkeys vs indices.** Pubkeys are the BLS public key on every keystore
-  JSON; indices are the uint64 the beacon chain assigns at activation.
-  keysync resolves between the two via the beacon node, so you can maintain
-  whichever list you already have: `KEYSYNC_PUBKEYS_FILE` (pubkey → index)
-  or `KEYSYNC_INDEX_LIST_FILE` (index → pubkey). Both require
-  `KEYSYNC_BEACON_URL`. `KEYSYNC_INDICES_FILE` is the no-lookup escape
-  hatch (a full JSON of pre-computed records for air-gapped setups), and it
-  wins over a beacon-resolved hit for the same `(validator_index, chain_id)`.
-  All three may be combined.
+- **Beacon node**: must allow unauthenticated reads on
+  `/eth/v1/beacon/states/head/validators` (Lighthouse: `--http`).
+- **Retries**: HTTP calls retry with exponential backoff on 5xx / 429 / network
+  errors only. Other 4xx fails fast, so a misconfiguration does not retry into a
+  rate limit.
 
 ## Examples
 
-A systemd timer template lives in `examples/systemd/`; a Kubernetes
-CronJob template lives in `examples/kubernetes/`.
+`examples/` has a pubkeys file, an index list, and an indices JSON, plus systemd
+timer and Kubernetes CronJob templates.
 
 ## Development
 
@@ -125,5 +129,5 @@ pip install -e '.[dev]'
 pytest
 ```
 
-Tests are hermetic — `respx` stubs every outbound HTTP call. No live
-API / beacon access required.
+Tests are hermetic: `respx` stubs every outbound HTTP call, so no live API or
+beacon access is required.
