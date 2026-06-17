@@ -108,8 +108,17 @@ class KeysyncConfig(BaseModel):
 
     @model_validator(mode="after")
     def _at_least_one_source(self) -> KeysyncConfig:
-        beacon_input = self.pubkeys_file or self.index_list_file
-        if not self.indices_file and not (self.beacon_url and beacon_input):
+        # pubkeys_file and index_list_file are both beacon-resolved, so the
+        # beacon URL is mandatory whenever either is set, even alongside an
+        # indices_file. Enforce here rather than letting resolve() fail later.
+        beacon_input = self.pubkeys_file is not None or self.index_list_file is not None
+        if beacon_input and not self.beacon_url:
+            raise ValueError(
+                "KEYSYNC_BEACON_URL is required when KEYSYNC_PUBKEYS_FILE "
+                "or KEYSYNC_INDEX_LIST_FILE is set; those inputs are resolved "
+                "against the beacon node"
+            )
+        if not self.indices_file and not beacon_input:
             raise ValueError(
                 "supply either KEYSYNC_INDICES_FILE, or KEYSYNC_BEACON_URL "
                 "together with KEYSYNC_PUBKEYS_FILE and/or "

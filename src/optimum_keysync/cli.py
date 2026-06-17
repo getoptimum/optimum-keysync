@@ -84,7 +84,7 @@ def _common_options(fn):
         "--beacon-url",
         envvar="KEYSYNC_BEACON_URL",
         default=None,
-        help="beacon node URL — required if pubkeys-file is used",
+        help="beacon node URL; required if pubkeys-file or index-list-file is used",
     )(fn)
     fn = click.option(
         "--pubkeys-file",
