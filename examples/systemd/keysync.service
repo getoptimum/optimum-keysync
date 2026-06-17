@@ -9,7 +9,7 @@ EnvironmentFile=/etc/optimum/keysync.env
 ExecStart=/usr/local/bin/keysync sync --apply
 # Hard stop after 10 minutes — a healthy reconcile finishes in < 30s for
 # operators with < 10k validators. Anything longer is a hung beacon or
-# billing call worth giving up on rather than overrunning the next tick.
+# API call worth giving up on rather than overrunning the next tick.
 TimeoutStartSec=600
 User=optimum
 Group=optimum

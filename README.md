@@ -1,6 +1,6 @@
 # optimum-keysync
 
-Reconcile a customer's Ethereum validator set against Optimum's billing
+Reconcile a customer's Ethereum validator set against Optimum's validator
 registry. One-shot CLI that's safe to run on a cron / systemd timer / k8s
 CronJob — `--dry-run` by default, `--apply` to mutate.
 
@@ -21,15 +21,15 @@ keysync:
    `optimum-auth` (the same `ovi_live_*` as the Bearer). The result is
    cached for the rest of the process. `KEYSYNC_OPERATOR_ID` can be set
    explicitly to skip this step.
-2. Presents the `ovi_live_*` directly to `optimum-billing` as the Bearer
-   on every API call. Billing's `combinedAuth` HMAC-hashes it, looks it
-   up in `internal.operator_api_keys`, and stamps `role=operator` on the
-   request. Revoking the key at the dashboard takes effect on keysync's
-   next request — no token caching to invalidate.
+2. Presents the `ovi_live_*` directly to the Optimum **console API** as the
+   Bearer on every call. The console verifies the key via optimum-auth
+   (`/api/v1/me`) and scopes the request to the resolved `operator_id`.
+   Revoking the key at the dashboard takes effect on keysync's next request
+   — no token caching to invalidate.
 3. Resolves the desired validator set: pubkeys against the beacon node's
    `/eth/v1/beacon/states/head/validators?id=<pubkey>` endpoint, plus
    anything in the indices JSON.
-4. Lists the operator's currently-assigned validators in `optimum-billing`.
+4. Lists the operator's currently-assigned validators from the console API.
 5. Computes the add / remove deltas.
 6. Under `--apply`, registers any new keys (`POST
    /api/v1/validator-keys/batch` — idempotent server-side), assigns them
@@ -43,7 +43,7 @@ Re-runs are idempotent: a steady state reports `added=0, removed=0`.
 ```bash
 pip install optimum-keysync
 
-export KEYSYNC_BILLING_URL=https://billing.getoptimum.io
+export KEYSYNC_API_URL=https://console.getoptimum.io
 export KEYSYNC_AUTH_URL=https://auth.getoptimum.io
 export KEYSYNC_API_KEY=ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 export KEYSYNC_NETWORK=mainnet
@@ -62,7 +62,7 @@ All knobs come from environment variables (and matching flag overrides).
 
 | Env var | Required | Purpose |
 | --- | --- | --- |
-| `KEYSYNC_BILLING_URL` | yes | Billing API base URL |
+| `KEYSYNC_API_URL` | yes | Optimum console API base URL (validator endpoints) |
 | `KEYSYNC_AUTH_URL` | yes | Auth API base URL (used for `GET /api/v1/me`) |
 | `KEYSYNC_API_KEY` | yes | `ovi_live_*` from the partners dashboard |
 | `KEYSYNC_OPERATOR_ID` | no | Auto-resolved via `GET /api/v1/me`. Set explicitly to skip the lookup (one round-trip saved) or to pin the scope. |
@@ -89,9 +89,10 @@ wiping out a whole operator's assignments.
 
 ## Operating notes
 
-- **The `ovi_live_*` is the Bearer on every billing call** — no JWT
-  exchange, no token caching. Billing rejects revoked keys on the next
-  request, so revocation at the dashboard takes effect immediately.
+- **The `ovi_live_*` is the Bearer on every console API call** — no JWT
+  exchange, no token caching. The console (via optimum-auth) rejects revoked
+  keys on the next request, so revocation at the dashboard takes effect
+  immediately.
 - **Tenacity wraps HTTP** — exponential backoff on 5xx / 429 / network
   errors only. Other 4xx surfaces immediately so a misconfiguration
   fails fast rather than retrying into a rate-limit.
@@ -117,4 +118,4 @@ pytest
 ```
 
 Tests are hermetic — `respx` stubs every outbound HTTP call. No live
-billing / beacon access required.
+API / beacon access required.

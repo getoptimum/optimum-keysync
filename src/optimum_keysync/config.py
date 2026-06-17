@@ -66,12 +66,14 @@ class KeysyncConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    billing_url: Annotated[str, Field(min_length=1)]
+    # api_url is the Optimum console API host (e.g. https://console.getoptimum.io)
+    # exposing the validator endpoints (list/assign/unassign + validator-keys/batch),
+    # re-homed from the retired optimum-billing service.
+    api_url: Annotated[str, Field(min_length=1)]
     # auth_url is the optimum-auth host (e.g. https://auth.getoptimum.io)
     # that exposes GET /api/v1/me. keysync hits it to resolve operator_id
     # from the API key when KEYSYNC_OPERATOR_ID is not set explicitly.
-    # Distinct from billing_url: auth.getoptimum.io is a Cloudflare Worker,
-    # billing.getoptimum.io is the Go service.
+    # Distinct from api_url: auth.getoptimum.io is a separate Cloudflare Worker.
     auth_url: Annotated[str, Field(min_length=1)]
     api_key: Annotated[str, Field(min_length=1)]
     # operator_id is optional: when omitted, the CLI resolves it via
@@ -111,9 +113,9 @@ class KeysyncConfig(BaseModel):
             raise ValueError(
                 "KEYSYNC_API_KEY must start with 'ovi_' — that prefix is the "
                 "operator-portal API key shape, the only credential the "
-                "billing API accepts on this path"
+                "console API accepts on this path"
             )
-        _require_https("KEYSYNC_BILLING_URL", self.billing_url)
+        _require_https("KEYSYNC_API_URL", self.api_url)
         _require_https("KEYSYNC_AUTH_URL", self.auth_url)
         if self.beacon_url:
             _require_https("KEYSYNC_BEACON_URL", self.beacon_url)
@@ -143,7 +145,7 @@ def from_env(overrides: dict[str, str | Path | None] | None = None) -> KeysyncCo
         return None
 
     return KeysyncConfig(
-        billing_url=pick("billing_url") or "",
+        api_url=pick("api_url") or "",
         auth_url=pick("auth_url") or "",
         api_key=pick("api_key") or "",
         operator_id=pick("operator_id"),

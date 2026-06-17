@@ -8,7 +8,7 @@ Three commands:
 
 Common config comes from env vars (KeysyncConfig.from_env). Each command
 also accepts the flag form of every env var so a one-off override (e.g.
-`--billing-url`) doesn't require export gymnastics.
+`--api-url`) doesn't require export gymnastics.
 """
 
 from __future__ import annotations
@@ -54,7 +54,9 @@ EXIT_BEACON = 6
 # fine for six options and keeps each command signature self-documenting.
 def _common_options(fn):
     fn = click.option(
-        "--billing-url", envvar="KEYSYNC_BILLING_URL", help="optimum-billing base URL"
+        "--api-url",
+        envvar="KEYSYNC_API_URL",
+        help="Optimum console API base URL (validator endpoints)",
     )(fn)
     fn = click.option(
         "--auth-url", envvar="KEYSYNC_AUTH_URL", help="optimum-auth base URL (for /api/v1/me)"
@@ -110,7 +112,7 @@ def _build_config(kwargs: dict[str, object]) -> KeysyncConfig:
     config layer's override dict."""
     overrides: dict[str, object] = {}
     name_map = {
-        "billing_url": "billing_url",
+        "api_url": "api_url",
         "auth_url": "auth_url",
         "api_key": "api_key",
         "operator_id": "operator_id",
@@ -144,7 +146,7 @@ def _build_config_or_exit(kwargs: dict[str, object]) -> KeysyncConfig:
 
 @click.group()
 def main() -> None:
-    """Reconcile operator validator indices against optimum-billing."""
+    """Reconcile operator validator indices against the Optimum console API."""
 
 
 # ── show ──────────────────────────────────────────────────────────────────
@@ -271,7 +273,7 @@ def _build_auth_and_billing(
     call site and map that to EXIT_AUTH. Explicit operator_id (env or
     flag) skips the lookup.
     """
-    billing = BillingClient(billing_url=cfg.billing_url)
+    billing = BillingClient(billing_url=cfg.api_url)
     operator_id = cfg.operator_id
     if not operator_id:
         _LOG.info("operator_id not configured; resolving via auth /me", auth_url=cfg.auth_url)
