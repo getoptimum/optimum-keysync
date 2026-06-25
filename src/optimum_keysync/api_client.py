@@ -16,7 +16,7 @@ next call.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Self
@@ -133,8 +133,16 @@ class ApiClient:
         self,
         keys: Iterable[ValidatorKeyRegistration],
         bearer: str,
+        *,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> tuple[int, int]:
-        """Idempotently register validator keys. Returns (added, skipped)."""
+        """Idempotently register validator keys. Returns (added, skipped).
+
+        Each chunk is committed server-side independently. `on_progress` (if
+        given) is called with the running (added, skipped) totals after every
+        committed chunk, so a caller can record progress that survives a
+        later-chunk failure (the exception still propagates).
+        """
         added, skipped = 0, 0
         for chunk in _chunks(list(keys), _BATCH_CHUNK_SIZE):
             payload = {
@@ -150,8 +158,13 @@ class ApiClient:
             url = f"{self._api_url}/api/v1/validator-keys/batch"
             resp = self._call("POST", url, bearer=bearer, json=payload)
             body = self._json_obj(resp)
-            added += int(body.get("added", 0))
-            skipped += int(body.get("skipped", 0))
+            try:
+                added += int(body.get("added", 0))
+                skipped += int(body.get("skipped", 0))
+            except (TypeError, ValueError) as e:
+                raise ApiError(f"unexpected validator-keys/batch response: {body!r}") from e
+            if on_progress is not None:
+                on_progress(added, skipped)
         return added, skipped
 
     def assign_validators(

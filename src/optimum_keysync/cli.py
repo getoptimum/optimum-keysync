@@ -307,6 +307,24 @@ def _compute_plan(
         sys.exit(EXIT_AUTH)
 
     beacon = stack.enter_context(BeaconClient(cfg.beacon_url)) if cfg.beacon_url else None
+    if beacon is not None:
+        # Verify the configured chain_id matches the beacon's actual network
+        # before computing a plan. Catches a testnet beacon paired with the
+        # mainnet chain_id default, and a wrong beacon_url (which would
+        # otherwise resolve an empty set and look like a mass exit).
+        try:
+            beacon_chain_id = beacon.get_chain_id()
+        except BeaconError as e:
+            _LOG.error("beacon node call failed", error=str(e))
+            sys.exit(EXIT_BEACON)
+        cfg_chain_id = _chain_id_to_int(cfg.chain_id)
+        if cfg_chain_id is not None and beacon_chain_id != cfg_chain_id:
+            _LOG.error(
+                "configured chain_id does not match the beacon node's network",
+                configured_chain_id=cfg.chain_id,
+                beacon_chain_id=beacon_chain_id,
+            )
+            sys.exit(EXIT_CONFIG)
     try:
         desired = resolve_desired(
             chain_id=cfg.chain_id,
@@ -332,6 +350,18 @@ def _compute_plan(
         _LOG.error("api list call failed", error=str(e))
         sys.exit(EXIT_API)
     return plan(desired, current), auth, api
+
+
+def _chain_id_to_int(chain_id: str) -> int | None:
+    """Parse the configured chain_id (eth-style hex like `0x1`, or plain
+    decimal) to an int for comparison with the beacon's reported chain id.
+    Returns None when it can't be parsed, so the cross-check is skipped rather
+    than raising on an unusual-but-API-accepted value."""
+    s = chain_id.strip().lower()
+    try:
+        return int(s, 16) if s.startswith("0x") else int(s, 10)
+    except ValueError:
+        return None
 
 
 def _print_plan(p: ReconcilePlan) -> None:
@@ -372,11 +402,17 @@ def _apply_plan(
         "assigned": 0,
         "unassigned": 0,
     }
+    def _record_register(added: int, skipped: int) -> None:
+        # Updated after every committed chunk so a mid-register failure still
+        # reports what actually landed, not 0.
+        progress["registered_added"] = added
+        progress["registered_skipped"] = skipped
+
     try:
         if p.to_register:
-            added, skipped = api.batch_register_keys(p.to_register, bearer)
-            progress["registered_added"] = added
-            progress["registered_skipped"] = skipped
+            added, skipped = api.batch_register_keys(
+                p.to_register, bearer, on_progress=_record_register
+            )
             _LOG.info("registered keys", added=added, skipped=skipped)
 
         if p.to_assign:

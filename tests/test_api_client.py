@@ -126,6 +126,45 @@ def test_list_validators_non_list_shape_surfaces_as_api_error() -> None:
         c.list_validators("42", "mainnet", "jwt")
 
 
+@respx.mock
+def test_batch_register_non_numeric_count_surfaces_as_api_error() -> None:
+    """A null/non-numeric added|skipped must map to ApiError, not a raw
+    TypeError/ValueError escaping the public boundary."""
+    respx.post(API_URL + "/api/v1/validator-keys/batch").mock(
+        return_value=httpx.Response(200, json={"added": None, "skipped": 0})
+    )
+    c = ApiClient(API_URL)
+    keys = [
+        ValidatorKeyRegistration(
+            validator_index=1, chain_id="0x1", validator_key="0x" + "a" * 96
+        )
+    ]
+    with pytest.raises(ApiError, match="validator-keys/batch"):
+        c.batch_register_keys(keys, "jwt")
+
+
+@respx.mock
+def test_batch_register_on_progress_records_committed_chunks_before_failure() -> None:
+    """on_progress fires per committed chunk, so a later-chunk failure still
+    reflects what landed (chunk 1) rather than zero."""
+    respx.post(API_URL + "/api/v1/validator-keys/batch").mock(
+        side_effect=[
+            httpx.Response(200, json={"added": 500, "skipped": 0}),
+            httpx.Response(400, text="bad request"),  # terminal -> no retries
+        ]
+    )
+    c = ApiClient(API_URL)
+    # > _BATCH_CHUNK_SIZE (500) so it splits into two chunks.
+    keys = [
+        ValidatorKeyRegistration(validator_index=i, chain_id="0x1", validator_key=f"0x{i:096x}")
+        for i in range(501)
+    ]
+    seen: list[tuple[int, int]] = []
+    with pytest.raises(ApiError):
+        c.batch_register_keys(keys, "jwt", on_progress=lambda a, s: seen.append((a, s)))
+    assert seen == [(500, 0)]  # first chunk recorded before the second failed
+
+
 def test_close_closes_internal_client_but_not_injected_one() -> None:
     """close()/context-manager respects ownership: a client we built is closed
     on exit; an injected one is left open for its owner."""
