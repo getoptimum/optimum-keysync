@@ -116,9 +116,12 @@ def test_non_json_200_surfaces_as_api_error() -> None:
 
 @respx.mock
 def test_list_validators_non_list_shape_surfaces_as_api_error() -> None:
+    # Assert the body-shape message specifically: the old code happened to
+    # raise ApiError here too (via a per-row TypeError), so matching the new
+    # message is what makes this a real guard for the isinstance(list) check.
     respx.get(API_URL + "/api/v1/operators/42/validators").mock(
         return_value=httpx.Response(200, json={"assignments": {"unexpected": 1}})
     )
     c = ApiClient(API_URL)
-    with pytest.raises(ApiError):
+    with pytest.raises(ApiError, match="body shape"):
         c.list_validators("42", "mainnet", "jwt")
