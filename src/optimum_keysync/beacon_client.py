@@ -169,6 +169,43 @@ class BeaconClient:
 
         return [v for v in seen.values() if v.status in _INCLUDED_STATUSES]
 
+    def get_chain_id(self) -> int:
+        """Return the execution-layer chain id the beacon node reports, from
+        `GET /eth/v1/config/deposit_contract`.
+
+        Lets the caller verify the configured chain_id matches the beacon's
+        real network, and doubles as a "is this actually a beacon?" probe: a
+        wrong beacon_url fails here loudly (BeaconError) rather than silently
+        resolving an empty validator set (which would look like a mass exit).
+        Wraps retryable + transport errors into BeaconError so callers contract
+        on the one type.
+        """
+        try:
+            return self._fetch_chain_id()
+        except _RetryableBeaconError as e:
+            raise BeaconError(f"beacon chain_id failed after retries: {e}") from e
+        except httpx.TransportError as e:
+            raise BeaconError(f"beacon chain_id transport failed after retries: {e}") from e
+
+    @tenacity.retry(
+        retry=tenacity.retry_if_exception_type((httpx.TransportError, _RetryableBeaconError)),
+        wait=tenacity.wait_exponential(multiplier=1, max=20),
+        stop=tenacity.stop_after_attempt(3),
+        reraise=True,
+    )
+    def _fetch_chain_id(self) -> int:
+        url = self._beacon_url + "/eth/v1/config/deposit_contract"
+        resp = self._client.get(url)
+        if 500 <= resp.status_code < 600:
+            raise _RetryableBeaconError(f"beacon {resp.status_code}: {resp.text}")
+        if resp.status_code != 200:
+            raise BeaconError(f"beacon {resp.status_code}: {resp.text}")
+        try:
+            # The beacon spec returns chain_id as a decimal string, e.g. "1".
+            return int(resp.json()["data"]["chain_id"])
+        except (KeyError, TypeError, ValueError) as e:
+            raise BeaconError(f"beacon deposit_contract malformed: {resp.text!r}") from e
+
     @tenacity.retry(
         retry=tenacity.retry_if_exception_type((httpx.TransportError, _RetryableBeaconError)),
         wait=tenacity.wait_exponential(multiplier=1, max=20),

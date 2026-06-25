@@ -153,10 +153,19 @@ def _read_indices(path: Path) -> list[DesiredValidator]:
     for i, row in enumerate(raw):
         if not isinstance(row, dict):
             raise ValueError(f"{path}[{i}] is not an object: {row!r}")
+        # Require a non-negative JSON integer. int() would otherwise silently
+        # coerce a bool (True->1), a float (3.9->3), or a negative into a
+        # plausible-looking but wrong index. bool is an int subclass, so it
+        # needs its own check.
+        vi = row.get("validator_index")
+        if isinstance(vi, bool) or not isinstance(vi, int) or vi < 0:
+            raise ValueError(
+                f"{path}[{i}] validator_index must be a non-negative integer: {row!r}"
+            )
         try:
             out.append(
                 DesiredValidator(
-                    validator_index=int(row["validator_index"]),
+                    validator_index=vi,
                     chain_id=str(row["chain_id"]),
                     validator_key=str(row["validator_key"]),
                 )

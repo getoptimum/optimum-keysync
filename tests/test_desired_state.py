@@ -230,3 +230,21 @@ def test_desired_set_dedup_is_idempotent() -> None:
     a = DesiredValidator(validator_index=1, chain_id="0x1", validator_key="0xk")
     s = DesiredSet([a, a, a])
     assert len(s) == 1
+
+
+@pytest.mark.parametrize("bad", [True, False, 3.9, -5, "7", None])
+def test_indices_file_rejects_non_integer_validator_index(tmp_path: Path, bad: object) -> None:
+    """int() would coerce a bool/float/negative/string into a plausible but
+    wrong index; the JSON path must reject them like _read_index_list does."""
+    indices = tmp_path / "i.json"
+    indices.write_text(
+        json.dumps([{"validator_index": bad, "chain_id": "0x1", "validator_key": "0x" + "c" * 96}])
+    )
+    with pytest.raises(ValueError, match="validator_index"):
+        resolve(
+            chain_id="0x1",
+            pubkeys_file=None,
+            index_list_file=None,
+            indices_file=indices,
+            beacon=None,
+        )

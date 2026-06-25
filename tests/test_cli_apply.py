@@ -38,11 +38,13 @@ class _StubApi:
         self._assign_raises = assign_raises
         self._unassign_raises_after = unassign_raises_after
 
-    def batch_register_keys(self, keys, _bearer):  # type: ignore[no-untyped-def]
+    def batch_register_keys(self, keys, _bearer, *, on_progress=None):  # type: ignore[no-untyped-def]
         if self._register_raises is not None:
             raise self._register_raises
         items = list(keys)
         self.registered.extend(items)
+        if on_progress is not None:
+            on_progress(len(items), 0)
         return len(items), 0
 
     def assign_validators(self, _op, items, _bearer):  # type: ignore[no-untyped-def]
