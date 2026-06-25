@@ -72,3 +72,19 @@ def test_normalise_index_rejects_negative() -> None:
     bc = BeaconClient(BEACON_URL)
     with pytest.raises(ValueError, match="non-negative"):
         bc._normalise_index(-1)
+
+
+def test_close_closes_internal_client_but_not_injected_one() -> None:
+    """close()/context-manager respects ownership: a client we built is closed
+    on exit; an injected one is left open for its owner."""
+    with BeaconClient(BEACON_URL) as c:
+        owned = c._client
+    assert owned.is_closed, "owned client must be closed on context exit"
+
+    injected = httpx.Client()
+    try:
+        with BeaconClient(BEACON_URL, client=injected) as c:
+            assert c._client is injected
+        assert not injected.is_closed, "injected client must NOT be closed by BeaconClient"
+    finally:
+        injected.close()

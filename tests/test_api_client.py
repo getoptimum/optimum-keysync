@@ -124,3 +124,19 @@ def test_list_validators_non_list_shape_surfaces_as_api_error() -> None:
     c = ApiClient(API_URL)
     with pytest.raises(ApiError, match="body shape"):
         c.list_validators("42", "mainnet", "jwt")
+
+
+def test_close_closes_internal_client_but_not_injected_one() -> None:
+    """close()/context-manager respects ownership: a client we built is closed
+    on exit; an injected one is left open for its owner."""
+    with ApiClient(API_URL) as c:
+        owned = c._client
+    assert owned.is_closed, "owned client must be closed on context exit"
+
+    injected = httpx.Client()
+    try:
+        with ApiClient(API_URL, client=injected) as c:
+            assert c._client is injected
+        assert not injected.is_closed, "injected client must NOT be closed by ApiClient"
+    finally:
+        injected.close()

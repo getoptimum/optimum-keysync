@@ -18,7 +18,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 import httpx
 import tenacity
@@ -69,7 +70,27 @@ class ApiClient:
         timeout_seconds: float = 30.0,
     ) -> None:
         self._api_url = api_url.rstrip("/")
+        # Track ownership so close() only closes a client we built. An injected
+        # client (tests, future shared-pool callers) keeps its own lifecycle.
+        self._owns_client = client is None
         self._client = client or httpx.Client(timeout=timeout_seconds)
+
+    def close(self) -> None:
+        """Close the internal `httpx.Client` if we built it. Idempotent and
+        safe to call when an external client was injected (no-op)."""
+        if self._owns_client:
+            self._client.close()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        self.close()
 
     # ── Reads ─────────────────────────────────────────────────────────────
 
