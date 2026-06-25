@@ -104,7 +104,7 @@ Wire alerts on these:
 | --- | --- |
 | 0 | success |
 | 2 | auth / identity failure |
-| 3 | billing / console API failure |
+| 3 | console API failure |
 | 4 | configuration error |
 | 5 | `--max-deletes` guardrail tripped |
 | 6 | beacon node failure |
