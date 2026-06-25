@@ -19,7 +19,7 @@ spec:
           restartPolicy: Never
           containers:
             - name: keysync
-              image: ghcr.io/getoptimum/optimum-keysync:0.1.0
+              image: ghcr.io/getoptimum/optimum-keysync:1.0.0
               args: ["sync", "--apply", "--log-format", "json"]
               envFrom:
                 - configMapRef:

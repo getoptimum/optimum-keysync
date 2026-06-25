@@ -130,3 +130,16 @@ pytest
 
 Tests are hermetic: `respx` stubs every outbound HTTP call, so no live API or
 beacon access is required.
+
+## Releasing
+
+Publishing to PyPI is automated via `.github/workflows/release.yml`, which runs
+when a GitHub Release is published and uploads with PyPI Trusted Publishing
+(OIDC) — no token is stored in the repo. To cut a release:
+
+1. Bump `version` in `pyproject.toml` and merge to `main`.
+2. Publish a GitHub Release tagged `v<version>` (e.g. `v1.0.0`).
+
+The workflow verifies the tag matches the package version, builds the sdist and
+wheel, and publishes. One-time setup: register the trusted publisher on PyPI
+(project `optimum-keysync`, workflow `release.yml`, environment `pypi`).
