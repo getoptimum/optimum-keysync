@@ -96,7 +96,6 @@ class KeysyncConfig(BaseModel):
     # a testnet (e.g. network=hoodi with its chain_id).
     network: Annotated[str, Field(min_length=1)] = _DEFAULT_NETWORK
     chain_id: Annotated[str, Field(min_length=1)] = _DEFAULT_CHAIN_ID
-    owner_name: Annotated[str, Field(min_length=1, max_length=128)]
 
     beacon_url: str | None = None
     pubkeys_file: Path | None = None
@@ -181,7 +180,6 @@ def from_env(overrides: dict[str, str | Path | None] | None = None) -> KeysyncCo
         operator_id=pick("operator_id"),
         network=pick("network") or _DEFAULT_NETWORK,
         chain_id=pick("chain_id") or _DEFAULT_CHAIN_ID,
-        owner_name=pick("owner_name") or "",
         beacon_url=pick("beacon_url"),
         pubkeys_file=pick_path("pubkeys_file"),
         index_list_file=pick_path("index_list_file"),

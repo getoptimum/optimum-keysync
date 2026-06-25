@@ -78,11 +78,6 @@ def _common_options(fn):
         "--chain-id", envvar="KEYSYNC_CHAIN_ID", help="chain id string (default: 0x1)"
     )(fn)
     fn = click.option(
-        "--owner-name",
-        envvar="KEYSYNC_OWNER_NAME",
-        help="label stored in eth_validator_keys.owner_name",
-    )(fn)
-    fn = click.option(
         "--beacon-url",
         envvar="KEYSYNC_BEACON_URL",
         default=None,
@@ -127,7 +122,6 @@ def _build_config(kwargs: dict[str, object]) -> KeysyncConfig:
         "operator_id": "operator_id",
         "network": "network",
         "chain_id": "chain_id",
-        "owner_name": "owner_name",
         "beacon_url": "beacon_url",
         "pubkeys_file": "pubkeys_file",
         "index_list_file": "index_list_file",
@@ -306,7 +300,6 @@ def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, ApiCli
     try:
         desired = resolve_desired(
             chain_id=cfg.chain_id,
-            owner_name=cfg.owner_name,
             pubkeys_file=cfg.pubkeys_file,
             index_list_file=cfg.index_list_file,
             indices_file=cfg.indices_file,

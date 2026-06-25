@@ -66,7 +66,6 @@ def test_batch_register_keys_aggregates_chunk_counts() -> None:
             validator_index=i,
             chain_id="0x1",
             validator_key=f"0x{i:096x}",
-            owner_name="acme",
         )
         for i in range(4)
     ]

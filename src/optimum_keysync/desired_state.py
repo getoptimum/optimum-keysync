@@ -2,7 +2,8 @@
 
 The result is a `DesiredSet` carrying every validator the operator wants
 assigned, with all the metadata the console API requires to register it
-(validator_index, chain_id, validator_key, owner_name).
+(validator_index, chain_id, validator_key). The registry's owner_name label
+is filled in server-side from the operator the API key resolves to.
 """
 
 from __future__ import annotations
@@ -23,15 +24,14 @@ _LOG = get_logger(__name__)
 class DesiredValidator:
     """One entry in the desired set.
 
-    `validator_key` and `owner_name` are required for the
-    `validator-keys/batch` register call; `validator_index` + `chain_id`
-    are also enough to drive the assignment call.
+    `validator_key` is required for the `validator-keys/batch` register
+    call; `validator_index` + `chain_id` are also enough to drive the
+    assignment call.
     """
 
     validator_index: int
     chain_id: str
     validator_key: str
-    owner_name: str
 
 
 class DesiredSet:
@@ -62,7 +62,6 @@ class DesiredSet:
                 validator_index=e.validator_index,
                 chain_id=e.chain_id,
                 validator_key=e.validator_key,
-                owner_name=e.owner_name,
             )
             for e in self._entries
         ]
@@ -71,7 +70,6 @@ class DesiredSet:
 def resolve(
     *,
     chain_id: str,
-    owner_name: str,
     pubkeys_file: Path | None,
     index_list_file: Path | None,
     indices_file: Path | None,
@@ -95,7 +93,6 @@ def resolve(
                         validator_index=v.validator_index,
                         chain_id=chain_id,
                         validator_key=v.pubkey,
-                        owner_name=owner_name,
                     )
                 )
 
@@ -114,12 +111,11 @@ def resolve(
                         validator_index=v.validator_index,
                         chain_id=chain_id,
                         validator_key=v.pubkey,
-                        owner_name=owner_name,
                     )
                 )
 
     if indices_file is not None:
-        for e in _read_indices(indices_file, fallback_owner_name=owner_name):
+        for e in _read_indices(indices_file):
             entries.append(e)
 
     return DesiredSet(entries)
@@ -149,7 +145,7 @@ def _read_index_list(path: Path) -> list[int]:
     return out
 
 
-def _read_indices(path: Path, *, fallback_owner_name: str) -> list[DesiredValidator]:
+def _read_indices(path: Path) -> list[DesiredValidator]:
     raw = json.loads(path.read_text())
     if not isinstance(raw, list):
         raise ValueError(f"{path} must be a JSON array of validator records")
@@ -163,7 +159,6 @@ def _read_indices(path: Path, *, fallback_owner_name: str) -> list[DesiredValida
                     validator_index=int(row["validator_index"]),
                     chain_id=str(row["chain_id"]),
                     validator_key=str(row["validator_key"]),
-                    owner_name=str(row.get("owner_name") or fallback_owner_name),
                 )
             )
         except (KeyError, TypeError, ValueError) as e:

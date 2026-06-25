@@ -16,7 +16,6 @@ indices for you):
 
 ```bash
 export KEYSYNC_API_KEY=ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-export KEYSYNC_OWNER_NAME="acme-mainnet"
 export KEYSYNC_BEACON_URL=http://localhost:5052
 export KEYSYNC_PUBKEYS_FILE=/etc/optimum/validators.pubkeys   # one pubkey per line
 
@@ -41,7 +40,7 @@ Pick whichever list you already have. All three may be combined.
 | --- | --- | --- | --- |
 | BLS pubkeys | `KEYSYNC_PUBKEYS_FILE` | one pubkey per line | required (resolves the index) |
 | Validator indices | `KEYSYNC_INDEX_LIST_FILE` | one index per line | required (resolves the pubkey) |
-| Pre-computed records | `KEYSYNC_INDICES_FILE` | JSON of `{validator_index, chain_id, validator_key, owner_name}` | not used |
+| Pre-computed records | `KEYSYNC_INDICES_FILE` | JSON of `{validator_index, chain_id, validator_key}` | not used |
 
 `KEYSYNC_INDICES_FILE` is the no-lookup option for air-gapped setups, and it
 wins over a beacon-resolved hit for the same `(validator_index, chain_id)`. See
@@ -59,7 +58,6 @@ All settings come from environment variables, each with a matching flag override
 | `KEYSYNC_API_KEY` | yes | `ovi_live_*` from the partners dashboard |
 | `KEYSYNC_NETWORK` | no | `mainnet`, `hoodi`, etc. Default: `mainnet` |
 | `KEYSYNC_CHAIN_ID` | no | Corresponding chain ID string. Default: `0x1` |
-| `KEYSYNC_OWNER_NAME` | yes | Stored in `eth_validator_keys.owner_name` |
 | `KEYSYNC_BEACON_URL` | conditional | Required when using a pubkeys or index-list file |
 | `KEYSYNC_PUBKEYS_FILE` | conditional | One BLS pubkey per line; beacon resolves the index |
 | `KEYSYNC_INDEX_LIST_FILE` | conditional | One validator index per line; beacon resolves the pubkey |

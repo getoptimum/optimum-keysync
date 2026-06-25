@@ -46,14 +46,12 @@ def test_dedup_indices_file_overrides_beacon(tmp_path: Path) -> None:
                     "validator_index": 1,
                     "chain_id": "0x1",
                     "validator_key": "0x" + "b" * 96,
-                    "owner_name": "explicit",
                 }
             ]
         )
     )
     out = resolve(
         chain_id="0x1",
-        owner_name="default",
         pubkeys_file=pubkeys,
         index_list_file=None,
         indices_file=indices,
@@ -62,7 +60,6 @@ def test_dedup_indices_file_overrides_beacon(tmp_path: Path) -> None:
     entries = list(out)
     assert len(entries) == 1
     assert entries[0].validator_key == "0x" + "b" * 96
-    assert entries[0].owner_name == "explicit"
 
 
 def test_indices_file_only(tmp_path: Path) -> None:
@@ -80,14 +77,15 @@ def test_indices_file_only(tmp_path: Path) -> None:
     )
     out = resolve(
         chain_id="0x1",
-        owner_name="fallback",
         pubkeys_file=None,
         index_list_file=None,
         indices_file=indices,
         beacon=None,
     )
     entries = list(out)
-    assert entries[0].owner_name == "fallback"  # picked up from kwarg
+    assert len(entries) == 1
+    assert entries[0].validator_index == 7
+    assert entries[0].validator_key == "0x" + "c" * 96
 
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "validators.json"
@@ -98,7 +96,6 @@ def test_resolve_from_indices_fixture_without_beacon() -> None:
     desired set resolves with no beacon node (beacon=None)."""
     out = resolve(
         chain_id="0x1",
-        owner_name="fallback",
         pubkeys_file=None,
         index_list_file=None,
         indices_file=_FIXTURE,
@@ -107,9 +104,6 @@ def test_resolve_from_indices_fixture_without_beacon() -> None:
     entries = {e.validator_index: e for e in out}
     assert set(entries) == {720396, 720397, 720398}
     assert entries[720396].validator_key.startswith("0xa1a1")
-    assert entries[720396].owner_name == "acme-mainnet"
-    # The third record omits owner_name, so the resolve() arg fills it in.
-    assert entries[720398].owner_name == "fallback"
 
 
 def test_pubkeys_without_beacon_raises(tmp_path: Path) -> None:
@@ -118,7 +112,6 @@ def test_pubkeys_without_beacon_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         resolve(
             chain_id="0x1",
-            owner_name="x",
             pubkeys_file=pubkeys,
             index_list_file=None,
             indices_file=None,
@@ -134,7 +127,6 @@ def test_pubkeys_file_skips_blank_and_comment_lines(tmp_path: Path) -> None:
     beacon = _StubBeacon([])
     resolve(
         chain_id="0x1",
-        owner_name="x",
         pubkeys_file=pubkeys,
         index_list_file=None,
         indices_file=None,
@@ -160,7 +152,6 @@ def test_index_list_resolves_pubkeys_via_beacon(tmp_path: Path) -> None:
     index_list.write_text("\n# comment\n42\n  \n")
     out = resolve(
         chain_id="0x1",
-        owner_name="acme",
         pubkeys_file=None,
         index_list_file=index_list,
         indices_file=None,
@@ -171,7 +162,6 @@ def test_index_list_resolves_pubkeys_via_beacon(tmp_path: Path) -> None:
     assert len(entries) == 1
     assert entries[0].validator_index == 42
     assert entries[0].validator_key == "0x" + "a" * 96
-    assert entries[0].owner_name == "acme"
 
 
 def test_index_list_without_beacon_raises(tmp_path: Path) -> None:
@@ -180,7 +170,6 @@ def test_index_list_without_beacon_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="no beacon client"):
         resolve(
             chain_id="0x1",
-            owner_name="x",
             pubkeys_file=None,
             index_list_file=index_list,
             indices_file=None,
@@ -195,7 +184,6 @@ def test_index_list_rejects_non_integer_line(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="not a validator index"):
         resolve(
             chain_id="0x1",
-            owner_name="x",
             pubkeys_file=None,
             index_list_file=index_list,
             indices_file=None,
@@ -213,7 +201,6 @@ def test_index_list_rejects_int_parsing_surprises(tmp_path: Path, line: str) -> 
     with pytest.raises(ValueError, match="not a validator index"):
         resolve(
             chain_id="0x1",
-            owner_name="x",
             pubkeys_file=None,
             index_list_file=index_list,
             indices_file=None,
@@ -240,8 +227,6 @@ def test_beacon_normalise_rejects_wrong_length() -> None:
 
 
 def test_desired_set_dedup_is_idempotent() -> None:
-    a = DesiredValidator(
-        validator_index=1, chain_id="0x1", validator_key="0xk", owner_name="x"
-    )
+    a = DesiredValidator(validator_index=1, chain_id="0x1", validator_key="0xk")
     s = DesiredSet([a, a, a])
     assert len(s) == 1
