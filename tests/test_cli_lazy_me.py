@@ -30,7 +30,6 @@ def _opts(indices_path: Path) -> list[str]:
         "--api-key", "ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "--network", "mainnet",
         "--chain-id", "0x1",
-        "--owner-name", "acme",
         "--indices-file", str(indices_path),
     ]
 

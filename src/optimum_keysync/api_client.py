@@ -50,7 +50,6 @@ class ValidatorKeyRegistration:
     validator_index: int
     chain_id: str
     validator_key: str  # 0x-prefixed BLS pubkey hex
-    owner_name: str
 
 
 class ApiError(RuntimeError):
@@ -123,7 +122,6 @@ class ApiClient:
                         "validator_index": k.validator_index,
                         "chain_id": k.chain_id,
                         "validator_key": k.validator_key,
-                        "owner_name": k.owner_name,
                     }
                     for k in chunk
                 ],

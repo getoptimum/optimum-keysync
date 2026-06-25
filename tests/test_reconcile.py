@@ -18,7 +18,6 @@ def _desired(*pairs: tuple[int, str]) -> DesiredSet:
             validator_index=idx,
             chain_id=cid,
             validator_key=f"0x{'a'*94}{idx:02d}",
-            owner_name="acme",
         )
         for idx, cid in pairs
     )

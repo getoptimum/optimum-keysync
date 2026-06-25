@@ -77,7 +77,6 @@ def _plan(*, assigns: list[tuple[int, str]], unassigns: list[tuple[int, str]]) -
             validator_index=idx,
             chain_id=cid,
             validator_key=f"0x{idx:096x}",
-            owner_name="acme",
         )
         for idx, cid in assigns
     )
@@ -146,7 +145,6 @@ def test_build_config_threads_index_list_file(tmp_path: Any) -> None:
             "operator_id": "42",
             "network": "mainnet",
             "chain_id": "0x1",
-            "owner_name": "acme",
             "beacon_url": "https://beacon.test",
             "index_list_file": index_list,
         }

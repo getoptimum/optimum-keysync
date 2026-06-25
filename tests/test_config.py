@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from optimum_keysync.config import KeysyncConfig, from_env
+from optimum_keysync.config import from_env
 
 _BASE: dict[str, str | Path] = {
     "api_url": "https://api.example",
@@ -15,7 +15,6 @@ _BASE: dict[str, str | Path] = {
     "operator_id": "42",
     "network": "mainnet",
     "chain_id": "0x1",
-    "owner_name": "acme",
 }
 
 
@@ -193,20 +192,6 @@ def test_plaintext_beacon_url_rejected(tmp_path: Path) -> None:
                 "beacon_url": "http://beacon.example.com",
                 "pubkeys_file": pubkeys,
             }
-        )
-
-
-def test_owner_name_length_capped() -> None:
-    with pytest.raises(ValueError):
-        KeysyncConfig(
-            api_url="https://b",
-            auth_url="https://a",
-            api_key="ovi_live_xxxxxxxxxxxxxxxxxxxx",
-            operator_id="42",
-            network="mainnet",
-            chain_id="0x1",
-            owner_name="x" * 129,
-            indices_file=Path("/tmp/x.json"),
         )
 
 

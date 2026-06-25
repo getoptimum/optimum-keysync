@@ -66,7 +66,6 @@ def plan(
             validator_index=desired_by_key[k].validator_index,
             chain_id=desired_by_key[k].chain_id,
             validator_key=desired_by_key[k].validator_key,
-            owner_name=desired_by_key[k].owner_name,
         )
         for k in sorted(add_keys)
     )
