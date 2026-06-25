@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "optimum-keysync"
-version = "0.1.0"
+# Single source of truth: src/optimum_keysync/__init__.py:__version__
+dynamic = ["version"]
 description = "Reconcile customer-owned Ethereum validator indices against Optimum's validator registry (console API). Cron-friendly CLI that authenticates with an ovi_live_* operator API key, diffs the desired set against the registry, and applies the delta."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,7 +13,7 @@ license = { text = "MIT" }
 authors = [{ name = "Optimum" }]
 keywords = ["ethereum", "validator", "optimum", "keysync", "sync", "operator"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -41,6 +42,9 @@ keysync = "optimum_keysync.cli:main"
 [project.urls]
 Homepage = "https://github.com/getoptimum/optimum-customer-key-import"
 Issues = "https://github.com/getoptimum/optimum-customer-key-import/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "optimum_keysync.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

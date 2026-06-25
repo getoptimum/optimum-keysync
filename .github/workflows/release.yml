@@ -1,0 +1,56 @@
+name: release
+
+# Publish to PyPI when a GitHub Release is published (the GitHub release flow).
+# Uses PyPI Trusted Publishing (OIDC) — no API token is stored in the repo.
+# One-time PyPI setup: add a trusted publisher for project `optimum-keysync`
+# with this repo, workflow file `release.yml`, and environment `pypi`.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/optimum-keysync/
+    permissions:
+      contents: read
+      id-token: write # OIDC token for Trusted Publishing; no stored secret
+    steps:
+      # Action versions pinned to commit SHAs (tag in the comment) per the
+      # OpenSSF / GitHub-hardening guidance used across this repo's workflows.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      # Guard against tag/version drift: the package version (single source,
+      # src/optimum_keysync/__init__.py) must match the release tag (with an
+      # optional leading `v`), so a release never publishes a different version
+      # than it claims.
+      - name: verify tag matches package version
+        run: |
+          pkg=$(PYTHONPATH=src python -c "import optimum_keysync; print(optimum_keysync.__version__)")
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$pkg" != "$tag" ]; then
+            echo "::error::release tag ${GITHUB_REF_NAME} (-> ${tag}) does not match pyproject version ${pkg}"
+            exit 1
+          fi
+
+      - name: build sdist + wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
