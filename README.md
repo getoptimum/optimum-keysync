@@ -15,11 +15,7 @@ fastest path is a file of BLS pubkeys plus a beacon node (keysync looks up the
 indices for you):
 
 ```bash
-export KEYSYNC_API_URL=https://console.getoptimum.io
-export KEYSYNC_AUTH_URL=https://auth.getoptimum.io
 export KEYSYNC_API_KEY=ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-export KEYSYNC_NETWORK=mainnet
-export KEYSYNC_CHAIN_ID=0x1
 export KEYSYNC_OWNER_NAME="acme-mainnet"
 export KEYSYNC_BEACON_URL=http://localhost:5052
 export KEYSYNC_PUBKEYS_FILE=/etc/optimum/validators.pubkeys   # one pubkey per line
@@ -27,6 +23,11 @@ export KEYSYNC_PUBKEYS_FILE=/etc/optimum/validators.pubkeys   # one pubkey per l
 keysync diff           # preview the planned changes, no writes
 keysync sync --apply   # apply them
 ```
+
+`KEYSYNC_API_URL`, `KEYSYNC_AUTH_URL`, `KEYSYNC_NETWORK`, and `KEYSYNC_CHAIN_ID`
+default to the public Optimum endpoints and Ethereum mainnet, so the snippet
+above omits them. Set them only to override, e.g. a testnet
+(`KEYSYNC_NETWORK=hoodi` with its `KEYSYNC_CHAIN_ID`).
 
 Get `KEYSYNC_API_KEY` (an `ovi_live_*` key) from the Optimum partners dashboard.
 That is the only secret; everything else is non-sensitive config. Re-runs are
@@ -53,11 +54,11 @@ All settings come from environment variables, each with a matching flag override
 
 | Env var | Required | Purpose |
 | --- | --- | --- |
-| `KEYSYNC_API_URL` | yes | Optimum console API base URL (validator endpoints) |
-| `KEYSYNC_AUTH_URL` | yes | Auth API base URL (used for `GET /api/v1/me`) |
+| `KEYSYNC_API_URL` | no | Optimum console API base URL (validator endpoints). Default: `https://console.getoptimum.io` |
+| `KEYSYNC_AUTH_URL` | no | Auth API base URL (used for `GET /api/v1/me`). Default: `https://auth.getoptimum.io` |
 | `KEYSYNC_API_KEY` | yes | `ovi_live_*` from the partners dashboard |
-| `KEYSYNC_NETWORK` | yes | `mainnet`, `hoodi`, etc. |
-| `KEYSYNC_CHAIN_ID` | yes | Corresponding chain ID string |
+| `KEYSYNC_NETWORK` | no | `mainnet`, `hoodi`, etc. Default: `mainnet` |
+| `KEYSYNC_CHAIN_ID` | no | Corresponding chain ID string. Default: `0x1` |
 | `KEYSYNC_OWNER_NAME` | yes | Stored in `eth_validator_keys.owner_name` |
 | `KEYSYNC_BEACON_URL` | conditional | Required when using a pubkeys or index-list file |
 | `KEYSYNC_PUBKEYS_FILE` | conditional | One BLS pubkey per line; beacon resolves the index |
