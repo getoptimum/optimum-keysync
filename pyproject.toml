@@ -40,8 +40,8 @@ dev = [
 keysync = "optimum_keysync.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/getoptimum/optimum-customer-key-import"
-Issues = "https://github.com/getoptimum/optimum-customer-key-import/issues"
+Homepage = "https://github.com/getoptimum/optimum-keysync"
+Issues = "https://github.com/getoptimum/optimum-keysync/issues"
 
 [tool.setuptools.dynamic]
 version = { attr = "optimum_keysync.__version__" }
