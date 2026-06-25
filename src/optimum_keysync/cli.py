@@ -56,10 +56,12 @@ def _common_options(fn):
     fn = click.option(
         "--api-url",
         envvar="KEYSYNC_API_URL",
-        help="Optimum console API base URL (validator endpoints)",
+        help="Optimum console API base URL (default: https://console.getoptimum.io)",
     )(fn)
     fn = click.option(
-        "--auth-url", envvar="KEYSYNC_AUTH_URL", help="optimum-auth base URL (for /api/v1/me)"
+        "--auth-url",
+        envvar="KEYSYNC_AUTH_URL",
+        help="optimum-auth base URL for /api/v1/me (default: https://auth.getoptimum.io)",
     )(fn)
     fn = click.option(
         "--api-key", envvar="KEYSYNC_API_KEY", help="operator ovi_live_* key"
@@ -70,10 +72,10 @@ def _common_options(fn):
         help="operator_id; auto-resolved via auth /me when omitted",
     )(fn)
     fn = click.option(
-        "--network", envvar="KEYSYNC_NETWORK", help="network name (mainnet/hoodi/...)"
+        "--network", envvar="KEYSYNC_NETWORK", help="network name (default: mainnet)"
     )(fn)
     fn = click.option(
-        "--chain-id", envvar="KEYSYNC_CHAIN_ID", help="chain id string"
+        "--chain-id", envvar="KEYSYNC_CHAIN_ID", help="chain id string (default: 0x1)"
     )(fn)
     fn = click.option(
         "--owner-name",

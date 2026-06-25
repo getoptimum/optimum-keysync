@@ -21,6 +21,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # explicit loopback addresses. Anything else MUST be https://.
 _PLAINTEXT_OK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
+# Defaults for the public Optimum endpoints and Ethereum mainnet, so the
+# dashboard's boilerplate can omit them. An explicit env var or flag wins.
+_DEFAULT_API_URL = "https://console.getoptimum.io"
+_DEFAULT_AUTH_URL = "https://auth.getoptimum.io"
+_DEFAULT_NETWORK = "mainnet"
+_DEFAULT_CHAIN_ID = "0x1"
+
 
 def _require_https(name: str, url: str) -> None:
     """Reject plaintext URLs against non-loopback hosts at config time.
@@ -66,21 +73,24 @@ class KeysyncConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # api_url is the Optimum console API host (e.g. https://console.getoptimum.io)
-    # exposing the validator endpoints (list/assign/unassign + validator-keys/batch).
-    api_url: Annotated[str, Field(min_length=1)]
-    # auth_url is the optimum-auth host (e.g. https://auth.getoptimum.io)
-    # that exposes GET /api/v1/me. keysync hits it to resolve operator_id
-    # from the API key when KEYSYNC_OPERATOR_ID is not set explicitly.
-    # Distinct from api_url: auth.getoptimum.io is a separate Cloudflare Worker.
-    auth_url: Annotated[str, Field(min_length=1)]
+    # api_url is the Optimum console API host exposing the validator endpoints
+    # (list/assign/unassign + validator-keys/batch). Defaults to the public
+    # console host so the dashboard boilerplate can omit it.
+    api_url: Annotated[str, Field(min_length=1)] = _DEFAULT_API_URL
+    # auth_url is the optimum-auth host that exposes GET /api/v1/me. keysync
+    # hits it to resolve operator_id from the API key when KEYSYNC_OPERATOR_ID
+    # is not set explicitly. Distinct from api_url: auth.getoptimum.io is a
+    # separate Cloudflare Worker. Defaults to the public auth host.
+    auth_url: Annotated[str, Field(min_length=1)] = _DEFAULT_AUTH_URL
     api_key: Annotated[str, Field(min_length=1)]
     # operator_id is optional: when omitted, the CLI resolves it via
     # `GET /api/v1/me` on auth_url on first contact. An explicit value
     # (env or flag) wins, so existing configs keep working.
     operator_id: str | None = None
-    network: Annotated[str, Field(min_length=1)]
-    chain_id: Annotated[str, Field(min_length=1)]
+    # network/chain_id default to Ethereum mainnet. Override both together for
+    # a testnet (e.g. network=hoodi with its chain_id).
+    network: Annotated[str, Field(min_length=1)] = _DEFAULT_NETWORK
+    chain_id: Annotated[str, Field(min_length=1)] = _DEFAULT_CHAIN_ID
     owner_name: Annotated[str, Field(min_length=1, max_length=128)]
 
     beacon_url: str | None = None
@@ -160,12 +170,12 @@ def from_env(overrides: dict[str, str | Path | None] | None = None) -> KeysyncCo
         return None
 
     return KeysyncConfig(
-        api_url=pick("api_url") or "",
-        auth_url=pick("auth_url") or "",
+        api_url=pick("api_url") or _DEFAULT_API_URL,
+        auth_url=pick("auth_url") or _DEFAULT_AUTH_URL,
         api_key=pick("api_key") or "",
         operator_id=pick("operator_id"),
-        network=pick("network") or "",
-        chain_id=pick("chain_id") or "",
+        network=pick("network") or _DEFAULT_NETWORK,
+        chain_id=pick("chain_id") or _DEFAULT_CHAIN_ID,
         owner_name=pick("owner_name") or "",
         beacon_url=pick("beacon_url"),
         pubkeys_file=pick_path("pubkeys_file"),

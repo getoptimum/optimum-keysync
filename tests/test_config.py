@@ -198,3 +198,42 @@ def test_owner_name_length_capped() -> None:
             owner_name="x" * 129,
             indices_file=Path("/tmp/x.json"),
         )
+
+
+def test_url_network_chain_defaults_applied_when_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """api_url/auth_url/network/chain_id fall back to the public Optimum
+    endpoints + mainnet, so the dashboard boilerplate can omit them."""
+    for k in ("KEYSYNC_API_URL", "KEYSYNC_AUTH_URL", "KEYSYNC_NETWORK", "KEYSYNC_CHAIN_ID"):
+        monkeypatch.delenv(k, raising=False)
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    base = {
+        k: v for k, v in _BASE.items()
+        if k not in {"api_url", "auth_url", "network", "chain_id"}
+    }
+    cfg = from_env({**base, "indices_file": indices})
+    assert cfg.api_url == "https://console.getoptimum.io"
+    assert cfg.auth_url == "https://auth.getoptimum.io"
+    assert cfg.network == "mainnet"
+    assert cfg.chain_id == "0x1"
+
+
+def test_explicit_url_network_chain_override_defaults(tmp_path: Path) -> None:
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    cfg = from_env(
+        {
+            **_BASE,
+            "api_url": "https://console.example",
+            "auth_url": "https://auth.example",
+            "network": "hoodi",
+            "chain_id": "0x4268",
+            "indices_file": indices,
+        }
+    )
+    assert cfg.api_url == "https://console.example"
+    assert cfg.auth_url == "https://auth.example"
+    assert cfg.network == "hoodi"
+    assert cfg.chain_id == "0x4268"
