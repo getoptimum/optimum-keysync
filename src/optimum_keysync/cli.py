@@ -13,6 +13,7 @@ also accepts the flag form of every env var so a one-off override (e.g.
 
 from __future__ import annotations
 
+import contextlib
 import json as _json
 import sys
 from pathlib import Path
@@ -162,20 +163,21 @@ def cmd_show(**kwargs: object) -> None:
     """Print currently-assigned validators. Read-only."""
     cfg = _build_config_or_exit(kwargs)
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
-    try:
-        auth, api = _build_auth_and_api(cfg)
-    except (AuthError, IdentityError) as e:
-        _LOG.error("auth setup failed", error=str(e))
-        sys.exit(EXIT_AUTH)
+    with contextlib.ExitStack() as stack:
+        try:
+            auth, api = _build_auth_and_api(cfg, stack)
+        except (AuthError, IdentityError) as e:
+            _LOG.error("auth setup failed", error=str(e))
+            sys.exit(EXIT_AUTH)
 
-    token = auth.token()
-    try:
-        current = api.list_validators(
-            token.operator_id, cfg.network, token.access_token
-        )
-    except ApiError as e:
-        _LOG.error("api list call failed", error=str(e))
-        sys.exit(EXIT_API)
+        token = auth.token()
+        try:
+            current = api.list_validators(
+                token.operator_id, cfg.network, token.access_token
+            )
+        except ApiError as e:
+            _LOG.error("api list call failed", error=str(e))
+            sys.exit(EXIT_API)
     click.echo(_json.dumps(
         [
             {
@@ -199,7 +201,8 @@ def cmd_diff(**kwargs: object) -> None:
     cfg = _build_config_or_exit(kwargs)
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
 
-    p, _, _ = _compute_plan(cfg)
+    with contextlib.ExitStack() as stack:
+        p, _, _ = _compute_plan(cfg, stack)
     _print_plan(p)
 
 
@@ -239,26 +242,27 @@ def cmd_sync(
     cfg = _build_config_or_exit(kwargs)
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
 
-    p, auth, api = _compute_plan(cfg)
-    _print_plan(p)
+    with contextlib.ExitStack() as stack:
+        p, auth, api = _compute_plan(cfg, stack)
+        _print_plan(p)
 
-    if not apply_flag or dry_run:
-        _LOG.info("dry-run — no writes performed", apply=apply_flag, dry_run=dry_run)
-        return
+        if not apply_flag or dry_run:
+            _LOG.info("dry-run — no writes performed", apply=apply_flag, dry_run=dry_run)
+            return
 
-    if p.remove_count > max_deletes:
-        _LOG.error(
-            "remove count exceeds --max-deletes guardrail",
-            remove_count=p.remove_count,
-            max_deletes=max_deletes,
-        )
-        sys.exit(EXIT_GUARDRAIL)
+        if p.remove_count > max_deletes:
+            _LOG.error(
+                "remove count exceeds --max-deletes guardrail",
+                remove_count=p.remove_count,
+                max_deletes=max_deletes,
+            )
+            sys.exit(EXIT_GUARDRAIL)
 
-    try:
-        _apply_plan(p, api, auth, cfg)
-    except (ApiError, AuthError) as e:
-        _LOG.error("apply failed", error=str(e))
-        sys.exit(EXIT_API if isinstance(e, ApiError) else EXIT_AUTH)
+        try:
+            _apply_plan(p, api, auth, cfg)
+        except (ApiError, AuthError) as e:
+            _LOG.error("apply failed", error=str(e))
+            sys.exit(EXIT_API if isinstance(e, ApiError) else EXIT_AUTH)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
@@ -266,6 +270,7 @@ def cmd_sync(
 
 def _build_auth_and_api(
     cfg: KeysyncConfig,
+    stack: contextlib.ExitStack,
 ) -> tuple[AuthClient, ApiClient]:
     """Construct the ApiClient + AuthClient pair.
 
@@ -277,7 +282,9 @@ def _build_auth_and_api(
     call site and map that to EXIT_AUTH. Explicit operator_id (env or
     flag) skips the lookup.
     """
-    api = ApiClient(api_url=cfg.api_url)
+    # Registered on the caller's ExitStack so the internal httpx.Client is
+    # closed when the command finishes, even on an early sys.exit.
+    api = stack.enter_context(ApiClient(api_url=cfg.api_url))
     operator_id = cfg.operator_id
     if not operator_id:
         _LOG.info("operator_id not configured; resolving via auth /me", auth_url=cfg.auth_url)
@@ -289,14 +296,17 @@ def _build_auth_and_api(
     return auth, api
 
 
-def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, ApiClient]:
+def _compute_plan(
+    cfg: KeysyncConfig,
+    stack: contextlib.ExitStack,
+) -> tuple[ReconcilePlan, AuthClient, ApiClient]:
     try:
-        auth, api = _build_auth_and_api(cfg)
+        auth, api = _build_auth_and_api(cfg, stack)
     except (AuthError, IdentityError) as e:
         _LOG.error("auth setup failed", error=str(e))
         sys.exit(EXIT_AUTH)
 
-    beacon = BeaconClient(cfg.beacon_url) if cfg.beacon_url else None
+    beacon = stack.enter_context(BeaconClient(cfg.beacon_url)) if cfg.beacon_url else None
     try:
         desired = resolve_desired(
             chain_id=cfg.chain_id,
