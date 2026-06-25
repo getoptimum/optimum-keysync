@@ -144,6 +144,16 @@ def test_plaintext_api_url_rejected(tmp_path: Path) -> None:
         )
 
 
+def test_hostless_https_url_rejected(tmp_path: Path) -> None:
+    """A scheme-only / hostless https URL (or a single-slash typo) must fail
+    at config time, not slip through and crash at request time."""
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    for url in ("https://", "https:///path", "https:/console.example"):
+        with pytest.raises(ValueError, match="must include a host"):
+            from_env({**_BASE, "api_url": url, "indices_file": indices})
+
+
 def test_plaintext_loopback_allowed_for_dev(tmp_path: Path) -> None:
     indices = tmp_path / "i.json"
     indices.write_text("[]")

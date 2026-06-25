@@ -45,6 +45,11 @@ def _require_https(name: str, url: str) -> None:
             f"API key is the only credential this CLI presents."
         )
     if parts.scheme == "https":
+        if not parts.hostname:
+            raise ValueError(
+                f"{name} must include a host (got {url!r}); a scheme-only or "
+                f"hostless URL passes config but fails at request time."
+            )
         return
     if parts.scheme == "http" and (parts.hostname or "") in _PLAINTEXT_OK_HOSTS:
         return

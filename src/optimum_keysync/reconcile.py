@@ -46,7 +46,11 @@ def plan(
     against re-ordering of either input.
     """
     desired_keys = desired.assignment_keys()
-    current_keys = {(a.validator_index, a.chain_id) for a in current}
+    # Only active assignments count as "currently present". An inactive row
+    # (active=False) for a desired validator must fall into add_keys so it
+    # gets re-registered and re-assigned rather than masked as already-current;
+    # inactive rows we don't want need no unassign call.
+    current_keys = {(a.validator_index, a.chain_id) for a in current if a.active}
 
     add_keys = desired_keys - current_keys
     remove_keys = current_keys - desired_keys

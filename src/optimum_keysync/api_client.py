@@ -82,11 +82,17 @@ class ApiClient:
     ) -> list[ValidatorAssignment]:
         url = f"{self._api_url}/api/v1/operators/{operator_id}/validators"
         resp = self._call("GET", url, bearer=bearer, params={"network": network})
-        body = resp.json()
+        body = self._json_obj(resp)
         # Server returns ValidatorsListResponse — extract the assignments.
+        # `assignments`/`validators` may be absent or explicitly null (an empty
+        # set serialised as null); normalise both shapes to an empty list.
         raw = body.get("assignments")
         if raw is None:
-            raw = body.get("validators", [])
+            raw = body.get("validators")
+        if raw is None:
+            raw = []
+        if not isinstance(raw, list):
+            raise ApiError(f"unexpected list_validators body shape: {body!r}")
         out: list[ValidatorAssignment] = []
         for r in raw:
             try:
@@ -124,7 +130,7 @@ class ApiClient:
             }
             url = f"{self._api_url}/api/v1/validator-keys/batch"
             resp = self._call("POST", url, bearer=bearer, json=payload)
-            body = resp.json()
+            body = self._json_obj(resp)
             added += int(body.get("added", 0))
             skipped += int(body.get("skipped", 0))
         return added, skipped
@@ -165,6 +171,20 @@ class ApiClient:
         )
 
     # ── Internals ─────────────────────────────────────────────────────────
+
+    def _json_obj(self, resp: httpx.Response) -> dict[str, Any]:
+        """Parse a JSON object body, mapping a non-JSON or non-object response
+        to ApiError. A 200 carrying an HTML proxy/error page or a truncated
+        body would otherwise raise a raw json.JSONDecodeError that bypasses the
+        public ApiError boundary and crashes the CLI's `except ApiError` exit.
+        """
+        try:
+            body = resp.json()
+        except ValueError as e:
+            raise ApiError(f"api returned non-JSON body: {e}") from e
+        if not isinstance(body, dict):
+            raise ApiError(f"api returned unexpected body shape: {body!r}")
+        return body
 
     def _call(
         self,
