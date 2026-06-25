@@ -10,10 +10,10 @@ which returns `[{index, balance, status, validator: {pubkey, ...}}]`.
 
   - pending_initialized, pending_queued
   - active_ongoing, active_exiting, active_slashed
-  - exited_unslashed, exited_slashed       ← still appear in billing scope
+  - exited_unslashed, exited_slashed       ← still appear in the registry scope
                                               for the current and prior epoch;
                                               keysync includes them and lets
-                                              billing's snapshotting handle
+                                              the API's snapshotting handle
                                               the actual exit accounting.
 
 We skip anything else (e.g. `withdrawal_*`).
@@ -38,7 +38,7 @@ _LOG = get_logger(__name__)
 _ID_CHUNK_SIZE = 32
 
 # Status values that count as "the operator currently owns this validator"
-# for billing scope. Centralised so a future tweak (e.g. excluding
+# for the registry scope. Centralised so a future tweak (e.g. excluding
 # `exited_unslashed`) is a one-place change.
 _INCLUDED_STATUSES = frozenset(
     {
@@ -122,7 +122,7 @@ class BeaconClient:
 
         The mirror of `resolve_pubkeys` for operators who track validators
         by index rather than BLS pubkey. The beacon `validators` endpoint
-        takes the index as `id` and returns the pubkey the billing register
+        takes the index as `id` and returns the pubkey the register
         call needs, so this fills the field keysync would otherwise require
         the operator to supply.
 

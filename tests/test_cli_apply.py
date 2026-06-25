@@ -17,12 +17,12 @@ from typing import Any
 
 import pytest
 
-from optimum_keysync.billing_client import BillingError
+from optimum_keysync.api_client import ApiError
 from optimum_keysync.cli import _apply_plan
 from optimum_keysync.reconcile import ReconcilePlan, ValidatorKeyRegistration
 
 
-class _StubBilling:
+class _StubApi:
     """Records calls and raises a configurable exception per stage."""
 
     def __init__(
@@ -55,7 +55,7 @@ class _StubBilling:
             self._unassign_raises_after is not None
             and len(self.unassigned) >= self._unassign_raises_after
         ):
-            raise BillingError("simulated 500 mid-unassign")
+            raise ApiError("simulated 500 mid-unassign")
         self.unassigned.append((idx, cid))
 
 
@@ -89,47 +89,47 @@ def _plan(*, assigns: list[tuple[int, str]], unassigns: list[tuple[int, str]]) -
 
 
 def test_apply_plan_runs_all_stages_in_order() -> None:
-    billing = _StubBilling()
+    api = _StubApi()
     auth = _StubAuth()
     plan = _plan(assigns=[(1, "0x1")], unassigns=[(99, "0x1")])
-    _apply_plan(plan, billing, auth, cfg=None)  # type: ignore[arg-type]
-    assert billing.registered and billing.assigned == [(1, "0x1")]
-    assert billing.unassigned == [(99, "0x1")]
+    _apply_plan(plan, api, auth, cfg=None)  # type: ignore[arg-type]
+    assert api.registered and api.assigned == [(1, "0x1")]
+    assert api.unassigned == [(99, "0x1")]
 
 
 def test_apply_plan_partial_unassign_failure_bubbles_with_progress(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Unassign raises after 1 successful row; the function must re-raise
-    BillingError AND log a partial-progress summary."""
-    billing = _StubBilling(unassign_raises_after=1)
+    ApiError AND log a partial-progress summary."""
+    api = _StubApi(unassign_raises_after=1)
     auth = _StubAuth()
     plan = _plan(
         assigns=[(1, "0x1"), (2, "0x1")],
         unassigns=[(98, "0x1"), (99, "0x1")],
     )
-    with pytest.raises(BillingError):
-        _apply_plan(plan, billing, auth, cfg=None)  # type: ignore[arg-type]
+    with pytest.raises(ApiError):
+        _apply_plan(plan, api, auth, cfg=None)  # type: ignore[arg-type]
     # Register + assign both completed before the unassign loop tripped.
-    assert len(billing.registered) == 2
-    assert len(billing.assigned) == 2
+    assert len(api.registered) == 2
+    assert len(api.assigned) == 2
     # Exactly one unassign landed before the error.
-    assert billing.unassigned == [(98, "0x1")]
+    assert api.unassigned == [(98, "0x1")]
 
 
 def test_apply_plan_assign_failure_skips_unassign() -> None:
     """A failure in stage 2 (assign) must not silently swallow stage 3."""
-    billing = _StubBilling(assign_raises=BillingError("simulated"))
+    api = _StubApi(assign_raises=ApiError("simulated"))
     auth = _StubAuth()
     plan = _plan(
         assigns=[(1, "0x1")],
         unassigns=[(99, "0x1")],
     )
-    with pytest.raises(BillingError):
-        _apply_plan(plan, billing, auth, cfg=None)  # type: ignore[arg-type]
-    assert billing.registered  # stage 1 ran
-    assert billing.assigned == []  # stage 2 failed
-    assert billing.unassigned == []  # stage 3 skipped
+    with pytest.raises(ApiError):
+        _apply_plan(plan, api, auth, cfg=None)  # type: ignore[arg-type]
+    assert api.registered  # stage 1 ran
+    assert api.assigned == []  # stage 2 failed
+    assert api.unassigned == []  # stage 3 skipped
 
 
 def test_build_config_threads_index_list_file(tmp_path: Any) -> None:
@@ -155,10 +155,10 @@ def test_build_config_threads_index_list_file(tmp_path: Any) -> None:
 
 
 def test_apply_plan_noop_short_circuits() -> None:
-    billing = _StubBilling()
+    api = _StubApi()
     auth = _StubAuth()
     plan = _plan(assigns=[], unassigns=[])
-    _apply_plan(plan, billing, auth, cfg=None)  # type: ignore[arg-type]
-    assert billing.registered == []
-    assert billing.assigned == []
-    assert billing.unassigned == []
+    _apply_plan(plan, api, auth, cfg=None)  # type: ignore[arg-type]
+    assert api.registered == []
+    assert api.assigned == []
+    assert api.unassigned == []

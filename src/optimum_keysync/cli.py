@@ -20,12 +20,12 @@ from pathlib import Path
 import click
 from pydantic import ValidationError
 
+from optimum_keysync.api_client import (
+    ApiClient,
+    ApiError,
+)
 from optimum_keysync.auth_client import AuthClient, AuthError
 from optimum_keysync.beacon_client import BeaconClient, BeaconError
-from optimum_keysync.billing_client import (
-    BillingClient,
-    BillingError,
-)
 from optimum_keysync.config import KeysyncConfig, from_env
 from optimum_keysync.desired_state import resolve as resolve_desired
 from optimum_keysync.identity_client import IdentityClient, IdentityError
@@ -43,7 +43,7 @@ _DEFAULT_MAX_DELETES = 10
 # Exit codes — documented in the README so customers can wire alerts.
 EXIT_OK = 0
 EXIT_AUTH = 2
-EXIT_BILLING = 3
+EXIT_API = 3
 EXIT_CONFIG = 4
 EXIT_GUARDRAIL = 5
 EXIT_BEACON = 6
@@ -167,19 +167,19 @@ def cmd_show(**kwargs: object) -> None:
     cfg = _build_config_or_exit(kwargs)
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
     try:
-        auth, billing = _build_auth_and_billing(cfg)
+        auth, api = _build_auth_and_api(cfg)
     except (AuthError, IdentityError) as e:
         _LOG.error("auth setup failed", error=str(e))
         sys.exit(EXIT_AUTH)
 
     token = auth.token()
     try:
-        current = billing.list_validators(
+        current = api.list_validators(
             token.operator_id, cfg.network, token.access_token
         )
-    except BillingError as e:
-        _LOG.error("billing list call failed", error=str(e))
-        sys.exit(EXIT_BILLING)
+    except ApiError as e:
+        _LOG.error("api list call failed", error=str(e))
+        sys.exit(EXIT_API)
     click.echo(_json.dumps(
         [
             {
@@ -217,7 +217,7 @@ def cmd_diff(**kwargs: object) -> None:
     "apply_flag",
     is_flag=True,
     default=False,
-    help="actually mutate billing — required to write anything",
+    help="actually mutate the API — required to write anything",
 )
 @click.option(
     "--dry-run",
@@ -243,7 +243,7 @@ def cmd_sync(
     cfg = _build_config_or_exit(kwargs)
     configure_logging(fmt=cfg.log_format)  # type: ignore[arg-type]
 
-    p, auth, billing = _compute_plan(cfg)
+    p, auth, api = _compute_plan(cfg)
     _print_plan(p)
 
     if not apply_flag or dry_run:
@@ -259,29 +259,29 @@ def cmd_sync(
         sys.exit(EXIT_GUARDRAIL)
 
     try:
-        _apply_plan(p, billing, auth, cfg)
-    except (BillingError, AuthError) as e:
+        _apply_plan(p, api, auth, cfg)
+    except (ApiError, AuthError) as e:
         _LOG.error("apply failed", error=str(e))
-        sys.exit(EXIT_BILLING if isinstance(e, BillingError) else EXIT_AUTH)
+        sys.exit(EXIT_API if isinstance(e, ApiError) else EXIT_AUTH)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
 
 
-def _build_auth_and_billing(
+def _build_auth_and_api(
     cfg: KeysyncConfig,
-) -> tuple[AuthClient, BillingClient]:
-    """Construct the BillingClient + AuthClient pair.
+) -> tuple[AuthClient, ApiClient]:
+    """Construct the ApiClient + AuthClient pair.
 
     When `cfg.operator_id` is not set, calls `GET /api/v1/me` on
     `cfg.auth_url` to resolve it from the API key — the auth Worker
     already knows the binding (via the same `operator_api_keys` table
-    billing reads), /me just exposes that derivation. Raises
+    the API reads), /me just exposes that derivation. Raises
     `IdentityError` on a failed lookup; the CLI commands wrap this
     call site and map that to EXIT_AUTH. Explicit operator_id (env or
     flag) skips the lookup.
     """
-    billing = BillingClient(billing_url=cfg.api_url)
+    api = ApiClient(api_url=cfg.api_url)
     operator_id = cfg.operator_id
     if not operator_id:
         _LOG.info("operator_id not configured; resolving via auth /me", auth_url=cfg.auth_url)
@@ -290,12 +290,12 @@ def _build_auth_and_billing(
         with IdentityClient(auth_url=cfg.auth_url) as identity:
             operator_id = identity.get_me(cfg.api_key).operator_id
     auth = AuthClient(api_key=cfg.api_key, operator_id=operator_id)
-    return auth, billing
+    return auth, api
 
 
-def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, BillingClient]:
+def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, ApiClient]:
     try:
-        auth, billing = _build_auth_and_billing(cfg)
+        auth, api = _build_auth_and_api(cfg)
     except (AuthError, IdentityError) as e:
         _LOG.error("auth setup failed", error=str(e))
         sys.exit(EXIT_AUTH)
@@ -320,13 +320,13 @@ def _compute_plan(cfg: KeysyncConfig) -> tuple[ReconcilePlan, AuthClient, Billin
 
     try:
         token = auth.token()
-        current = billing.list_validators(
+        current = api.list_validators(
             token.operator_id, cfg.network, token.access_token
         )
-    except BillingError as e:
-        _LOG.error("billing list call failed", error=str(e))
-        sys.exit(EXIT_BILLING)
-    return plan(desired, current), auth, billing
+    except ApiError as e:
+        _LOG.error("api list call failed", error=str(e))
+        sys.exit(EXIT_API)
+    return plan(desired, current), auth, api
 
 
 def _print_plan(p: ReconcilePlan) -> None:
@@ -340,7 +340,7 @@ def _print_plan(p: ReconcilePlan) -> None:
 
 def _apply_plan(
     p: ReconcilePlan,
-    billing: BillingClient,
+    api: ApiClient,
     auth: AuthClient,
     cfg: KeysyncConfig,
 ) -> None:
@@ -355,7 +355,7 @@ def _apply_plan(
     bearer, op_id = token.access_token, token.operator_id
 
     # Track progress across the three stages so a failure mid-apply (e.g.
-    # billing 5xx after register succeeded) tells the operator exactly
+    # api 5xx after register succeeded) tells the operator exactly
     # which stages landed. Without this, a partial reconcile looks like a
     # full failure from logs and the next cron run is harder to reason
     # about. Each stage is idempotent server-side (register dedups on
@@ -369,22 +369,22 @@ def _apply_plan(
     }
     try:
         if p.to_register:
-            added, skipped = billing.batch_register_keys(p.to_register, bearer)
+            added, skipped = api.batch_register_keys(p.to_register, bearer)
             progress["registered_added"] = added
             progress["registered_skipped"] = skipped
             _LOG.info("registered keys", added=added, skipped=skipped)
 
         if p.to_assign:
-            billing.assign_validators(op_id, p.to_assign, bearer)
+            api.assign_validators(op_id, p.to_assign, bearer)
             progress["assigned"] = len(p.to_assign)
             _LOG.info("assigned validators", count=len(p.to_assign))
 
         if p.to_unassign:
             for idx, cid in p.to_unassign:
-                billing.unassign_validator(op_id, idx, cid, bearer)
+                api.unassign_validator(op_id, idx, cid, bearer)
                 progress["unassigned"] += 1
             _LOG.info("unassigned validators", count=progress["unassigned"])
-    except (BillingError, AuthError) as e:
+    except (ApiError, AuthError) as e:
         # Emit the partial-progress summary before bubbling so the operator
         # can see how far we got. The CLI's outer handler maps the
         # exception to an exit code; we don't swallow it here.

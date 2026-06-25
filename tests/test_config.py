@@ -9,7 +9,7 @@ import pytest
 from optimum_keysync.config import KeysyncConfig, from_env
 
 _BASE: dict[str, str | Path] = {
-    "api_url": "https://billing.example",
+    "api_url": "https://api.example",
     "auth_url": "https://auth.example",
     "api_key": "ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "operator_id": "42",
@@ -110,7 +110,7 @@ def test_empty_operator_id_coerces_to_none() -> None:
     """An explicitly-empty `KEYSYNC_OPERATOR_ID=""` (a shell typo or
     misconfigured kustomize) is treated as "not set", so the lazy
     /me lookup fires rather than the CLI passing an empty string
-    through to billing's URL paths."""
+    through to the API's URL paths."""
     cfg = from_env({**_BASE, "operator_id": "", "indices_file": Path("/tmp/x.json")})
     assert cfg.operator_id is None
     # Same for a whitespace-only value.
@@ -138,7 +138,7 @@ def test_plaintext_api_url_rejected(tmp_path: Path) -> None:
         from_env(
             {
                 **_BASE,
-                "api_url": "http://billing.example.com",
+                "api_url": "http://api.example.com",
                 "indices_file": indices,
             }
         )
@@ -165,8 +165,8 @@ def test_userinfo_in_url_rejected(tmp_path: Path) -> None:
     indices = tmp_path / "i.json"
     indices.write_text("[]")
     for url in (
-        "https://user@billing.example.com",
-        "https://user:pass@billing.example.com",
+        "https://user@api.example.com",
+        "https://user:pass@api.example.com",
         "https://localhost@evil.example.com",
     ):
         with pytest.raises(ValueError, match="userinfo"):

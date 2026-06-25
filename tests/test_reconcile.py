@@ -7,7 +7,7 @@ two helpers below.
 
 from __future__ import annotations
 
-from optimum_keysync.billing_client import ValidatorAssignment
+from optimum_keysync.api_client import ValidatorAssignment
 from optimum_keysync.desired_state import DesiredSet, DesiredValidator
 from optimum_keysync.reconcile import plan
 

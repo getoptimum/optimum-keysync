@@ -1,11 +1,11 @@
 """End-to-end CLI test for the lazy /me operator_id resolution.
 
 Drives `keysync show` through Click's CliRunner with respx stubbing
-both the auth /me endpoint and the billing validator-list endpoint.
+both the auth /me endpoint and the console API validator-list endpoint.
 Asserts:
 
   - /me on auth_url is called exactly once when --operator-id is omitted
-  - the resolved operator_id flows into the subsequent billing URL path
+  - the resolved operator_id flows into the subsequent API URL path
   - --operator-id (when provided) skips the /me call entirely
 """
 
@@ -61,7 +61,7 @@ def test_show_without_operator_id_calls_auth_me_then_lists(indices_file: Path) -
 
     assert result.exit_code == 0, result.output
     assert me_route.call_count == 1, "/me must be called once when operator_id is omitted"
-    assert list_route.call_count == 1, "the resolved operator_id must drive the billing path"
+    assert list_route.call_count == 1, "the resolved operator_id must drive the API path"
 
 
 @respx.mock
@@ -102,7 +102,7 @@ def test_show_auth_me_401_exits_auth(indices_file: Path) -> None:
 
 
 # `diff` and `sync` go through _compute_plan, which has its own
-# _build_auth_and_billing call site with its own except block. `show`
+# _build_auth_and_api call site with its own except block. `show`
 # bypasses that helper, so a regression there would slip past the tests
 # above. One diff-path test pins the same lazy-/me contract.
 
@@ -129,7 +129,7 @@ def test_diff_without_operator_id_calls_auth_me(indices_file: Path) -> None:
 @respx.mock
 def test_diff_auth_me_401_exits_auth(indices_file: Path) -> None:
     # Pins that a /me 401 on the _compute_plan path maps to EXIT_AUTH
-    # (the same as show), not EXIT_BILLING or an uncaught exception.
+    # (the same as show), not EXIT_API or an uncaught exception.
     respx.get("https://auth.test/api/v1/me").mock(
         return_value=httpx.Response(401, json={"error": "invalid_credential"})
     )

@@ -1,6 +1,6 @@
-"""Thin client for optimum-billing's validator-key + assignment surface.
+"""Thin client for the Optimum console API's validator-key + assignment surface.
 
-Endpoints used (see optimum-billing/internal/routes/{validators,validator_keys}.go):
+Endpoints used:
 
   - POST /api/v1/validator-keys/batch       — idempotent bulk-register
   - GET  /api/v1/operators/{op}/validators  — current assignment set
@@ -9,7 +9,7 @@ Endpoints used (see optimum-billing/internal/routes/{validators,validator_keys}.
                                              — unassign
 
 Every request carries the operator API key as `Authorization: Bearer
-ovi_live_...` — direct-auth model. Billing's combinedAuth HMAC-hashes
+ovi_live_...` — direct-auth model. The API's combinedAuth HMAC-hashes
 the key per request and rejects revoked keys with a plain 401 on the
 next call.
 """
@@ -28,10 +28,9 @@ from optimum_keysync.logging import get_logger
 _LOG = get_logger(__name__)
 
 
-# Server-side chunking lives in optimum-billing
-# (internal/service/validators/service.go's CreateKeys), so this client
-# limit only buys us nicer partial-progress logs — we still chunk to keep
-# request size predictable.
+# Server-side chunking exists too, so this client limit only buys us
+# nicer partial-progress logs — we still chunk to keep request size
+# predictable.
 _BATCH_CHUNK_SIZE = 500
 
 
@@ -54,23 +53,23 @@ class ValidatorKeyRegistration:
     owner_name: str
 
 
-class BillingError(RuntimeError):
-    """Billing returned an error we cannot retry."""
+class ApiError(RuntimeError):
+    """The API returned an error we cannot retry."""
 
 
-class _RetryableBillingError(RuntimeError):
+class _RetryableApiError(RuntimeError):
     """5xx / transient errors. Caught by tenacity; never escapes."""
 
 
-class BillingClient:
+class ApiClient:
     def __init__(
         self,
-        billing_url: str,
+        api_url: str,
         *,
         client: httpx.Client | None = None,
         timeout_seconds: float = 30.0,
     ) -> None:
-        self._billing_url = billing_url.rstrip("/")
+        self._api_url = api_url.rstrip("/")
         self._client = client or httpx.Client(timeout=timeout_seconds)
 
     # ── Reads ─────────────────────────────────────────────────────────────
@@ -81,7 +80,7 @@ class BillingClient:
         network: str,
         bearer: str,
     ) -> list[ValidatorAssignment]:
-        url = f"{self._billing_url}/api/v1/operators/{operator_id}/validators"
+        url = f"{self._api_url}/api/v1/operators/{operator_id}/validators"
         resp = self._call("GET", url, bearer=bearer, params={"network": network})
         body = resp.json()
         # Server returns ValidatorsListResponse — extract the assignments.
@@ -99,7 +98,7 @@ class BillingClient:
                     )
                 )
             except (KeyError, TypeError, ValueError) as e:
-                raise BillingError(f"unexpected list_validators row: {r!r}") from e
+                raise ApiError(f"unexpected list_validators row: {r!r}") from e
         return out
 
     # ── Writes ────────────────────────────────────────────────────────────
@@ -123,7 +122,7 @@ class BillingClient:
                     for k in chunk
                 ],
             }
-            url = f"{self._billing_url}/api/v1/validator-keys/batch"
+            url = f"{self._api_url}/api/v1/validator-keys/batch"
             resp = self._call("POST", url, bearer=bearer, json=payload)
             body = resp.json()
             added += int(body.get("added", 0))
@@ -144,7 +143,7 @@ class BillingClient:
                 {"validator_index": idx, "chain_id": cid} for idx, cid in items
             ],
         }
-        url = f"{self._billing_url}/api/v1/operators/{operator_id}/validators"
+        url = f"{self._api_url}/api/v1/operators/{operator_id}/validators"
         self._call("POST", url, bearer=bearer, json=payload)
 
     def unassign_validator(
@@ -155,7 +154,7 @@ class BillingClient:
         bearer: str,
     ) -> None:
         url = (
-            f"{self._billing_url}/api/v1/operators/{operator_id}/validators/"
+            f"{self._api_url}/api/v1/operators/{operator_id}/validators/"
             f"{validator_index}"
         )
         self._call(
@@ -179,23 +178,23 @@ class BillingClient:
         """Public-error-envelope wrapper around the retry-decorated _do.
 
         tenacity's reraise=True re-throws the original exception once
-        attempts exhaust. _do retries on both _RetryableBillingError
+        attempts exhaust. _do retries on both _RetryableApiError
         (5xx/429) AND httpx.TransportError (network/DNS/timeout), so we
-        wrap both here. Callers contract on BillingError as the public
+        wrap both here. Callers contract on ApiError as the public
         unrecoverable-error type; leaking httpx.TransportError past this
-        boundary would bypass the CLI's `except BillingError` exit and
-        crash the process instead of exiting cleanly with EXIT_BILLING.
+        boundary would bypass the CLI's `except ApiError` exit and
+        crash the process instead of exiting cleanly with EXIT_API.
         """
         try:
             return self._do(method, url, bearer=bearer, params=params, json=json)
-        except _RetryableBillingError as e:
-            raise BillingError(f"billing failed after retries: {e}") from e
+        except _RetryableApiError as e:
+            raise ApiError(f"api failed after retries: {e}") from e
         except httpx.TransportError as e:
-            raise BillingError(f"billing transport failed after retries: {e}") from e
+            raise ApiError(f"api transport failed after retries: {e}") from e
 
     @tenacity.retry(
         retry=tenacity.retry_if_exception_type(
-            (httpx.TransportError, _RetryableBillingError)
+            (httpx.TransportError, _RetryableApiError)
         ),
         wait=tenacity.wait_exponential(multiplier=1, max=20),
         stop=tenacity.stop_after_attempt(3),
@@ -220,9 +219,9 @@ class BillingClient:
         if resp.status_code == 401:
             # Direct-auth model: 401 means the ovi_live_* was rejected
             # (unknown, revoked, or scoped to a different operator).
-            # Surface as a terminal BillingError — there's no
+            # Surface as a terminal ApiError — there's no
             # re-exchange branch to bounce to.
-            raise BillingError(f"billing 401: {resp.text}")
+            raise ApiError(f"api 401: {resp.text}")
         if resp.status_code == 429:
             # Rate-limit. Retry with the standard exponential backoff —
             # 3 attempts x wait_exponential(max=20s) keeps total time
@@ -230,11 +229,11 @@ class BillingClient:
             # honour Retry-After here: the tenacity wait is already a
             # bounded fallback, and burning the cache window on a 60s
             # Retry-After would defeat the cron cadence.
-            raise _RetryableBillingError(f"billing 429: {resp.text}")
+            raise _RetryableApiError(f"api 429: {resp.text}")
         if 500 <= resp.status_code < 600:
-            raise _RetryableBillingError(f"billing {resp.status_code}: {resp.text}")
+            raise _RetryableApiError(f"api {resp.status_code}: {resp.text}")
         if resp.status_code >= 400:
-            raise BillingError(f"billing {resp.status_code}: {resp.text}")
+            raise ApiError(f"api {resp.status_code}: {resp.text}")
         return resp
 
 

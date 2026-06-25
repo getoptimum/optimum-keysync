@@ -1,7 +1,7 @@
 """Compute the desired validator set from beacon discovery + indices file.
 
 The result is a `DesiredSet` carrying every validator the operator wants
-assigned, with all the metadata the billing API requires to register it
+assigned, with all the metadata the console API requires to register it
 (validator_index, chain_id, validator_key, owner_name).
 """
 
@@ -12,8 +12,8 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from optimum_keysync.api_client import ValidatorKeyRegistration
 from optimum_keysync.beacon_client import BeaconClient
-from optimum_keysync.billing_client import ValidatorKeyRegistration
 from optimum_keysync.logging import get_logger
 
 _LOG = get_logger(__name__)
