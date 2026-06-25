@@ -166,6 +166,25 @@ def test_plaintext_loopback_allowed_for_dev(tmp_path: Path) -> None:
     assert cfg.api_url == "http://127.0.0.1:8080"
 
 
+def test_schemeless_url_rejected_with_scheme_message(tmp_path: Path) -> None:
+    """A bare host (no scheme) is rejected with a message about the missing
+    scheme rather than the generic 'must use https'."""
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    with pytest.raises(ValueError, match="must include a scheme"):
+        from_env({**_BASE, "api_url": "console.getoptimum.io", "indices_file": indices})
+
+
+def test_unknown_log_format_rejected(tmp_path: Path) -> None:
+    """The --log-format flag is enum-restricted by click, but the env path is
+    not; an unknown KEYSYNC_LOG_FORMAT must fail config rather than silently
+    rendering console output."""
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    with pytest.raises(ValueError, match="log_format"):
+        from_env({**_BASE, "log_format": "yaml", "indices_file": indices})
+
+
 def test_userinfo_in_url_rejected(tmp_path: Path) -> None:
     """Embedded credentials in URLs are bad hygiene — the ovi_live_* key
     is the only credential this CLI presents. Also catches a class of

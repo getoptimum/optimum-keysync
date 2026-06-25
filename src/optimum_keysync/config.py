@@ -51,6 +51,11 @@ def _require_https(name: str, url: str) -> None:
             f"{name} must not embed userinfo (user:pass@host); the operator "
             f"API key is the only credential this CLI presents."
         )
+    if not parts.scheme:
+        raise ValueError(
+            f"{name} must include a scheme, e.g. https:// (got {url!r}); a bare "
+            f"host like 'console.getoptimum.io' is rejected."
+        )
     if parts.scheme == "https":
         if not parts.hostname:
             raise ValueError(
@@ -117,6 +122,16 @@ class KeysyncConfig(BaseModel):
         a future Field(min_length=...) tighten the non-empty case."""
         if isinstance(v, str) and v.strip() == "":
             return None
+        return v
+
+    @field_validator("log_format")
+    @classmethod
+    def _known_log_format(cls, v: str) -> str:
+        # The --log-format flag is enum-restricted by click, but the env var
+        # path isn't; reject an unknown value here instead of silently
+        # rendering console output.
+        if v not in ("console", "json"):
+            raise ValueError(f"log_format must be 'console' or 'json' (got {v!r})")
         return v
 
     @model_validator(mode="after")

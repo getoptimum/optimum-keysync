@@ -137,7 +137,7 @@ class BeaconClient:
                 sample=missing[:3],
             )
 
-        return [v for v in seen.values() if v.status in _INCLUDED_STATUSES]
+        return self._included(list(seen.values()))
 
     def resolve_indices(self, indices: Sequence[int]) -> list[BeaconValidator]:
         """Resolve a validator-index list to (index, pubkey, status) triples.
@@ -167,7 +167,22 @@ class BeaconClient:
                 sample=missing[:3],
             )
 
-        return [v for v in seen.values() if v.status in _INCLUDED_STATUSES]
+        return self._included(list(seen.values()))
+
+    def _included(self, candidates: list[BeaconValidator]) -> list[BeaconValidator]:
+        """Keep only validators whose status counts as currently-owned. Logs the
+        count of known-but-excluded validators (e.g. withdrawal_done) so a real
+        exit dropping out of the desired set leaves a trail instead of vanishing
+        silently."""
+        included = [v for v in candidates if v.status in _INCLUDED_STATUSES]
+        if len(included) != len(candidates):
+            dropped = sorted({v.status for v in candidates if v.status not in _INCLUDED_STATUSES})
+            _LOG.info(
+                "beacon validators excluded by status (not currently owned)",
+                excluded_count=len(candidates) - len(included),
+                statuses=dropped,
+            )
+        return included
 
     def get_chain_id(self) -> int:
         """Return the execution-layer chain id the beacon node reports, from
