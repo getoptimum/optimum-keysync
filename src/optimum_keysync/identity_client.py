@@ -1,18 +1,18 @@
 """Client for optimum-auth's GET /api/v1/me endpoint.
 
-keysync's URL paths to billing are operator-scoped
+keysync's URL paths to the API are operator-scoped
 (/api/v1/operators/{op}/validators), so the CLI needs the operator_id
-before it can call billing. The /me endpoint at auth.getoptimum.io
+before it can call the API. The /me endpoint at auth.getoptimum.io
 resolves it from the ovi_* key itself, so customers no longer have to
 paste both `KEYSYNC_API_KEY` and `KEYSYNC_OPERATOR_ID`.
 
-Lives in its own module rather than alongside `billing_client` because
+Lives in its own module rather than alongside `api_client` because
 it talks to a different host (the Cloudflare Worker, not the Go
 service); keeping them separate makes the host targeting obvious at
 the call site (`IdentityClient(cfg.auth_url)` vs
-`BillingClient(cfg.api_url)`).
+`ApiClient(cfg.api_url)`).
 
-Retry policy + exception envelope mirror `billing_client` so the CLI's
+Retry policy + exception envelope mirror `api_client` so the CLI's
 exit-code mapping stays uniform.
 """
 
@@ -106,7 +106,7 @@ class IdentityClient:
         op = str(body.get("operator_id") or "")
         if not op:
             # /me returns 200 with empty operator_id for ops-staff JWTs
-            # (super_admin / billing_admin / operator_admin without an
+            # (super_admin / operator_admin without an
             # operator binding). keysync requires an operator-scoped
             # credential — fail fast with an actionable message.
             raise IdentityError(

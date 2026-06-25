@@ -4,7 +4,7 @@ The JWT-exchange model is gone (see auth_client.py module docstring),
 so these tests are now trivial: the AuthClient holds an api_key +
 operator_id pair and returns it on every call. The interesting
 behaviour now lives in config validation (covered by test_config.py)
-and in billing_client / cli call sites.
+and in api_client / cli call sites.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def test_empty_api_key_rejected() -> None:
 
 def test_empty_operator_id_rejected() -> None:
     """operator_id is the path scoper for /operators/{op}/validators; an
-    empty value would produce a 400/404 at billing. Fail fast."""
+    empty value would produce a 400/404 at the API. Fail fast."""
     with pytest.raises(AuthError, match="operator_id"):
         AuthClient(api_key="ovi_live_test", operator_id="")
 

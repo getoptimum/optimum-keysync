@@ -26,8 +26,8 @@ def _require_https(name: str, url: str) -> None:
     """Reject plaintext URLs against non-loopback hosts at config time.
 
     keysync carries the `ovi_live_*` on the wire as the Bearer of every
-    billing call (the direct-auth model — no JWT exchange). A mistyped
-    `http://billing.getoptimum.io` would silently send the credential in
+    API call (the direct-auth model — no JWT exchange). A mistyped
+    `http://console.getoptimum.io` would silently send the credential in
     plaintext on every reconcile. Fail-fast at startup so a misconfigured
     cron doesn't quietly leak.
 
@@ -67,8 +67,7 @@ class KeysyncConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     # api_url is the Optimum console API host (e.g. https://console.getoptimum.io)
-    # exposing the validator endpoints (list/assign/unassign + validator-keys/batch),
-    # re-homed from the retired optimum-billing service.
+    # exposing the validator endpoints (list/assign/unassign + validator-keys/batch).
     api_url: Annotated[str, Field(min_length=1)]
     # auth_url is the optimum-auth host (e.g. https://auth.getoptimum.io)
     # that exposes GET /api/v1/me. keysync hits it to resolve operator_id

@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from optimum_keysync.billing_client import ValidatorAssignment, ValidatorKeyRegistration
+from optimum_keysync.api_client import ValidatorAssignment, ValidatorKeyRegistration
 from optimum_keysync.desired_state import DesiredSet
 
 
 @dataclass(frozen=True)
 class ReconcilePlan:
-    """The set of mutations needed to bring billing in line with desired."""
+    """The set of mutations needed to bring the registry in line with desired."""
 
     to_register: tuple[ValidatorKeyRegistration, ...]
     to_assign: tuple[tuple[int, str], ...]
