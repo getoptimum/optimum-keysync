@@ -90,3 +90,38 @@ def test_assign_validators_noop_when_empty() -> None:
     c = ApiClient(API_URL)
     c.assign_validators("42", [], "jwt-token")
     # No respx route registered → respx would have raised if a call was made.
+
+
+@respx.mock
+def test_list_validators_null_set_is_empty() -> None:
+    # An empty assignment set serialised as null must read as [], not crash.
+    respx.get(API_URL + "/api/v1/operators/42/validators").mock(
+        return_value=httpx.Response(200, json={"operator_id": "42", "validators": None})
+    )
+    c = ApiClient(API_URL)
+    assert c.list_validators("42", "mainnet", "jwt") == []
+
+
+@respx.mock
+def test_non_json_200_surfaces_as_api_error() -> None:
+    # A 200 carrying a non-JSON body (proxy HTML page) must surface as
+    # ApiError, not a raw JSONDecodeError escaping the public boundary.
+    respx.get(API_URL + "/api/v1/operators/42/validators").mock(
+        return_value=httpx.Response(200, text="<html>proxy error</html>")
+    )
+    c = ApiClient(API_URL)
+    with pytest.raises(ApiError, match="non-JSON"):
+        c.list_validators("42", "mainnet", "jwt")
+
+
+@respx.mock
+def test_list_validators_non_list_shape_surfaces_as_api_error() -> None:
+    # Assert the body-shape message specifically: the old code happened to
+    # raise ApiError here too (via a per-row TypeError), so matching the new
+    # message is what makes this a real guard for the isinstance(list) check.
+    respx.get(API_URL + "/api/v1/operators/42/validators").mock(
+        return_value=httpx.Response(200, json={"assignments": {"unexpected": 1}})
+    )
+    c = ApiClient(API_URL)
+    with pytest.raises(ApiError, match="body shape"):
+        c.list_validators("42", "mainnet", "jwt")

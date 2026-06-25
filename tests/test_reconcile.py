@@ -90,3 +90,21 @@ def test_plan_is_stable_against_input_ordering() -> None:
         _current((1, "0x1"), (4, "0x1")),
     )
     assert p1 == p2
+
+
+def test_inactive_current_assignment_is_reassigned() -> None:
+    # A desired validator the API reports as active=False must be
+    # re-registered + re-assigned, not masked as already-present.
+    current = [ValidatorAssignment(validator_index=1, chain_id="0x1", active=False)]
+    p = plan(_desired((1, "0x1")), current)
+    assert p.to_assign == ((1, "0x1"),)
+    assert {r.validator_index for r in p.to_register} == {1}
+    assert p.to_unassign == ()
+
+
+def test_inactive_undesired_assignment_needs_no_unassign() -> None:
+    # An inactive row we don't want is already inactive; no unassign call.
+    current = [ValidatorAssignment(validator_index=9, chain_id="0x1", active=False)]
+    p = plan(_desired(), current)
+    assert p.is_noop
+    assert p.to_unassign == ()
