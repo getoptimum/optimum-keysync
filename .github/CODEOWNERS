@@ -1,0 +1,4 @@
+# Default owners for everything in this repo. The DevOps team is requested for
+# review on all changes. Requires the @getoptimum/devops team to have write
+# access to the repository for review requests to be assigned.
+* @getoptimum/devops
