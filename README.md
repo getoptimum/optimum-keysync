@@ -10,14 +10,13 @@ registry. A one-shot CLI, safe to run on a cron / systemd timer / k8s CronJob:
 pip install optimum-keysync
 ```
 
-Point keysync at the Optimum APIs and tell it which validators you own. The
-fastest path is a file of BLS pubkeys plus a beacon node (keysync looks up the
-indices for you):
+Point keysync at your Optimum API key and tell it which validators you manage.
+The simplest input is a JSON file of records (no beacon node needed); see
+`examples/indices.json` for the format:
 
 ```bash
 export KEYSYNC_API_KEY=ovi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-export KEYSYNC_BEACON_URL=http://localhost:5052
-export KEYSYNC_PUBKEYS_FILE=/etc/optimum/validators.pubkeys   # one pubkey per line
+export KEYSYNC_INDICES_FILE=/path/to/your-validators.json
 
 keysync diff           # preview the planned changes, no writes
 keysync sync --apply   # apply them
@@ -27,6 +26,14 @@ keysync sync --apply   # apply them
 default to the public Optimum endpoints and Ethereum mainnet, so the snippet
 above omits them. Set them only to override, e.g. a testnet
 (`KEYSYNC_NETWORK=hoodi` with its `KEYSYNC_CHAIN_ID`).
+
+Prefer to track validators by BLS pubkey or bare index? Point keysync at a
+beacon node and it resolves the rest:
+
+```bash
+export KEYSYNC_BEACON_URL=http://your-beacon-node:5052
+export KEYSYNC_PUBKEYS_FILE=/path/to/validators.pubkeys   # one BLS pubkey per line
+```
 
 Get `KEYSYNC_API_KEY` (an `ovi_live_*` key) from the Optimum partners dashboard.
 That is the only secret; everything else is non-sensitive config. Re-runs are
