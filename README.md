@@ -60,7 +60,7 @@ All settings come from environment variables, each with a matching flag override
 
 | Env var | Required | Purpose |
 | --- | --- | --- |
-| `KEYSYNC_API_URL` | no | Optimum console API base URL (validator endpoints). Default: `https://console.getoptimum.io` |
+| `KEYSYNC_API_URL` | no | Optimum console API base URL (validator endpoints). Default: `https://console.getoptimum.xyz` |
 | `KEYSYNC_AUTH_URL` | no | Auth API base URL (used for `GET /api/v1/me`). Default: `https://auth.getoptimum.io` |
 | `KEYSYNC_API_KEY` | yes | `ovi_live_*` from the partners dashboard |
 | `KEYSYNC_NETWORK` | no | `mainnet`, `hoodi`, etc. Default: `mainnet` |

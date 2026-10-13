@@ -172,7 +172,7 @@ def test_schemeless_url_rejected_with_scheme_message(tmp_path: Path) -> None:
     indices = tmp_path / "i.json"
     indices.write_text("[]")
     with pytest.raises(ValueError, match="must include a scheme"):
-        from_env({**_BASE, "api_url": "console.getoptimum.io", "indices_file": indices})
+        from_env({**_BASE, "api_url": "console.getoptimum.xyz", "indices_file": indices})
 
 
 def test_unknown_log_format_rejected(tmp_path: Path) -> None:
@@ -228,7 +228,7 @@ def test_url_network_chain_defaults_applied_when_unset(
         if k not in {"api_url", "auth_url", "network", "chain_id"}
     }
     cfg = from_env({**base, "indices_file": indices})
-    assert cfg.api_url == "https://console.getoptimum.io"
+    assert cfg.api_url == "https://console.getoptimum.xyz"
     assert cfg.auth_url == "https://auth.getoptimum.io"
     assert cfg.network == "mainnet"
     assert cfg.chain_id == "0x1"
