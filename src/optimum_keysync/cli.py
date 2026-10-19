@@ -57,7 +57,7 @@ def _common_options(fn):
     fn = click.option(
         "--api-url",
         envvar="KEYSYNC_API_URL",
-        help="Optimum console API base URL (default: https://console.getoptimum.io)",
+        help="Optimum console API base URL (default: https://console.getoptimum.xyz)",
     )(fn)
     fn = click.option(
         "--auth-url",

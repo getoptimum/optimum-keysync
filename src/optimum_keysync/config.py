@@ -23,7 +23,7 @@ _PLAINTEXT_OK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 # Defaults for the public Optimum endpoints and Ethereum mainnet, so the
 # dashboard's boilerplate can omit them. An explicit env var or flag wins.
-_DEFAULT_API_URL = "https://console.getoptimum.io"
+_DEFAULT_API_URL = "https://console.getoptimum.xyz"
 _DEFAULT_AUTH_URL = "https://auth.getoptimum.io"
 _DEFAULT_NETWORK = "mainnet"
 _DEFAULT_CHAIN_ID = "0x1"
@@ -34,7 +34,7 @@ def _require_https(name: str, url: str) -> None:
 
     keysync carries the `ovi_live_*` on the wire as the Bearer of every
     API call (the direct-auth model — no JWT exchange). A mistyped
-    `http://console.getoptimum.io` would silently send the credential in
+    `http://console.getoptimum.xyz` would silently send the credential in
     plaintext on every reconcile. Fail-fast at startup so a misconfigured
     cron doesn't quietly leak.
 
@@ -54,7 +54,7 @@ def _require_https(name: str, url: str) -> None:
     if not parts.scheme:
         raise ValueError(
             f"{name} must include a scheme, e.g. https:// (got {url!r}); a bare "
-            f"host like 'console.getoptimum.io' is rejected."
+            f"host like 'console.getoptimum.xyz' is rejected."
         )
     if parts.scheme == "https":
         if not parts.hostname:
