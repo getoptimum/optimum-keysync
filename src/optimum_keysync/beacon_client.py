@@ -124,7 +124,7 @@ class BeaconClient:
         normalised = [self._normalise(pk) for pk in pubkeys]
         seen: dict[str, BeaconValidator] = {}
         for chunk in _chunks(normalised, _ID_CHUNK_SIZE):
-            for v in self._fetch_chunk(chunk):
+            for v in self._fetch_chunk_guarded(chunk):
                 seen[v.pubkey] = v
 
         missing = [pk for pk in normalised if pk not in seen]
@@ -154,7 +154,7 @@ class BeaconClient:
         normalised = [self._normalise_index(i) for i in indices]
         seen: dict[int, BeaconValidator] = {}
         for chunk in _chunks([str(i) for i in normalised], _ID_CHUNK_SIZE):
-            for v in self._fetch_chunk(chunk):
+            for v in self._fetch_chunk_guarded(chunk):
                 seen[v.validator_index] = v
 
         missing = [i for i in normalised if i not in seen]
@@ -221,6 +221,26 @@ class BeaconClient:
         except (KeyError, TypeError, ValueError) as e:
             raise BeaconError(f"beacon deposit_contract malformed: {resp.text!r}") from e
 
+    def _fetch_chunk_guarded(self, ids: Sequence[str]) -> list[BeaconValidator]:
+        """Call `_fetch_chunk`, mapping retry-exhausted and transport errors
+        to `BeaconError` so callers contract on the one type — the same
+        wrapper `get_chain_id` applies to `_fetch_chain_id`. Without it the
+        raw exception leaks out of `resolve_pubkeys` / `resolve_indices`
+        and the CLI dies with a traceback and exit 1 instead of the
+        documented beacon exit code 6.
+        """
+        try:
+            return self._fetch_chunk(ids)
+        except _RetryableBeaconError as e:
+            raise BeaconError(f"beacon validators failed after retries: {e}") from e
+        except httpx.TransportError as e:
+            raise BeaconError(f"beacon validators transport failed after retries: {e}") from e
+        except httpx.DecodingError as e:
+            # DecodingError is not a TransportError: a corrupt (e.g. gzip)
+            # body would otherwise escape as a traceback. It is not
+            # transient, so it fails fast with no retry, like the JSON guard.
+            raise BeaconError(f"beacon validators returned undecodable body: {e}") from e
+
     @tenacity.retry(
         retry=tenacity.retry_if_exception_type((httpx.TransportError, _RetryableBeaconError)),
         wait=tenacity.wait_exponential(multiplier=1, max=20),
@@ -244,7 +264,20 @@ class BeaconClient:
         if resp.status_code != 200:
             raise BeaconError(f"beacon {resp.status_code}: {resp.text}")
 
-        body = resp.json()
+        # Parse the body the same way ApiClient._json_obj does: a 200
+        # carrying an HTML proxy/error page or a truncated body must raise
+        # BeaconError (exit 6), not a raw json.JSONDecodeError (a ValueError
+        # the CLI maps to the config exit 4) or an AttributeError on
+        # `body.get` for a non-object body (which nothing catches).
+        try:
+            body = resp.json()
+        except (ValueError, RecursionError) as e:
+            # RecursionError: a 200 whose JSON nests beyond Python's
+            # recursion limit (e.g. a runaway array) must exit 6 like any
+            # other malformed body, not crash with a traceback.
+            raise BeaconError(f"beacon validators returned non-JSON body: {e}") from e
+        if not isinstance(body, dict):
+            raise BeaconError(f"beacon validators returned unexpected body shape: {body!r}")
         data = body.get("data")
         if not isinstance(data, list):
             raise BeaconError(f"beacon returned unexpected shape: {body!r}")
@@ -256,7 +289,9 @@ class BeaconClient:
                 inner = entry["validator"]
                 pubkey = self._normalise(str(inner["pubkey"]))
                 status = str(entry.get("status", ""))
-            except (KeyError, TypeError, ValueError) as e:
+            except (KeyError, TypeError, ValueError, OverflowError) as e:
+                # OverflowError: a beacon can return a numeric literal like
+                # 1e400, which json decodes as infinity; int() on it raises.
                 raise BeaconError(f"beacon entry malformed: {entry!r}") from e
             out.append(BeaconValidator(validator_index=idx, pubkey=pubkey, status=status))
         return out
