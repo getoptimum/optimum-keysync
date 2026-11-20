@@ -27,7 +27,7 @@ from optimum_keysync.api_client import (
 )
 from optimum_keysync.auth_client import AuthClient, AuthError
 from optimum_keysync.beacon_client import BeaconClient, BeaconError
-from optimum_keysync.config import KeysyncConfig, from_env
+from optimum_keysync.config import KeysyncConfig, from_env, parse_chain_id
 from optimum_keysync.desired_state import resolve as resolve_desired
 from optimum_keysync.identity_client import IdentityClient, IdentityError
 from optimum_keysync.logging import configure as configure_logging
@@ -357,11 +357,7 @@ def _chain_id_to_int(chain_id: str) -> int | None:
     decimal) to an int for comparison with the beacon's reported chain id.
     Returns None when it can't be parsed, so the cross-check is skipped rather
     than raising on an unusual-but-API-accepted value."""
-    s = chain_id.strip().lower()
-    try:
-        return int(s, 16) if s.startswith("0x") else int(s, 10)
-    except ValueError:
-        return None
+    return parse_chain_id(chain_id)
 
 
 def _print_plan(p: ReconcilePlan) -> None:

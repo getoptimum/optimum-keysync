@@ -248,3 +248,30 @@ def test_indices_file_rejects_non_integer_validator_index(tmp_path: Path, bad: o
             indices_file=indices,
             beacon=None,
         )
+
+
+def test_indices_file_chain_id_normalized(tmp_path: Path) -> None:
+    # Issue #25: an indices file may carry the chain id as a JSON number (1)
+    # or a decimal/padded string ("0x01"); all must read as "0x1".
+    indices = tmp_path / "i.json"
+    indices.write_text(
+        json.dumps(
+            [
+                {"validator_index": 1, "chain_id": 1, "validator_key": "0x" + "a" * 96},
+                {"validator_index": 2, "chain_id": "0x01", "validator_key": "0x" + "b" * 96},
+                {"validator_index": 3, "chain_id": "560048", "validator_key": "0x" + "c" * 96},
+            ]
+        )
+    )
+    out = resolve(
+        chain_id="0x1",
+        pubkeys_file=None,
+        index_list_file=None,
+        indices_file=indices,
+        beacon=None,
+    )
+    assert [(e.validator_index, e.chain_id) for e in out] == [
+        (1, "0x1"),
+        (2, "0x1"),
+        (3, "0x88bb0"),
+    ]

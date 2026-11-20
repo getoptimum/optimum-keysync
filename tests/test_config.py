@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from optimum_keysync.config import from_env
+from optimum_keysync.config import canonical_chain_id, from_env
 
 _BASE: dict[str, str | Path] = {
     "api_url": "https://api.example",
@@ -251,3 +251,29 @@ def test_explicit_url_network_chain_override_defaults(tmp_path: Path) -> None:
     assert cfg.auth_url == "https://auth.example"
     assert cfg.network == "hoodi"
     assert cfg.chain_id == "0x4268"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("0x1", "0x1"),
+        ("1", "0x1"),
+        ("0X01", "0x1"),
+        ("17000", "0x4268"),
+        ("560048", "0x88bb0"),
+        ("0x88BB0", "0x88bb0"),
+        ("garbage", "garbage"),
+        ("", ""),
+    ],
+)
+def test_canonical_chain_id(value: str, expected: str) -> None:
+    assert canonical_chain_id(value) == expected
+
+
+def test_decimal_chain_id_normalized_in_config(tmp_path: Path) -> None:
+    # Issue #25: KEYSYNC_CHAIN_ID=1 must become "0x1" at config time so the
+    # plan compares the same value Console rows carry.
+    indices = tmp_path / "i.json"
+    indices.write_text("[]")
+    cfg = from_env({**_BASE, "chain_id": "1", "indices_file": indices})
+    assert cfg.chain_id == "0x1"

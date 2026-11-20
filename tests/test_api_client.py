@@ -179,3 +179,27 @@ def test_close_closes_internal_client_but_not_injected_one() -> None:
         assert not injected.is_closed, "injected client must NOT be closed by ApiClient"
     finally:
         injected.close()
+
+
+@respx.mock
+def test_list_validators_normalizes_decimal_chain_id() -> None:
+    # Issue #25: a Console row returned as decimal "1" (or JSON number 1)
+    # must read as "0x1", matching the desired side.
+    respx.get(API_URL + "/api/v1/operators/42/validators").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "operator_id": "42",
+                "validators": [
+                    {"validator_index": 1, "chain_id": "1", "active": True},
+                    {"validator_index": 2, "chain_id": 17000, "active": True},
+                ],
+            },
+        )
+    )
+    c = ApiClient(API_URL)
+    out = c.list_validators("42", "mainnet", "jwt-token")
+    assert out == [
+        ValidatorAssignment(validator_index=1, chain_id="0x1", active=True),
+        ValidatorAssignment(validator_index=2, chain_id="0x4268", active=True),
+    ]

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from optimum_keysync.api_client import ValidatorKeyRegistration
 from optimum_keysync.beacon_client import BeaconClient
+from optimum_keysync.config import canonical_chain_id
 from optimum_keysync.logging import get_logger
 
 _LOG = get_logger(__name__)
@@ -166,7 +167,10 @@ def _read_indices(path: Path) -> list[DesiredValidator]:
             out.append(
                 DesiredValidator(
                     validator_index=vi,
-                    chain_id=str(row["chain_id"]),
+                    # An indices file may carry the chain id as a JSON number
+                    # (1) or a decimal string ("1"); normalize to the same
+                    # canonical form as the config (issue #25).
+                    chain_id=canonical_chain_id(str(row["chain_id"])),
                     validator_key=str(row["validator_key"]),
                 )
             )

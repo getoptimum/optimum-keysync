@@ -64,7 +64,7 @@ All settings come from environment variables, each with a matching flag override
 | `KEYSYNC_AUTH_URL` | no | Auth API base URL (used for `GET /api/v1/me`). Default: `https://auth.getoptimum.io` |
 | `KEYSYNC_API_KEY` | yes | `ovi_live_*` from the partners dashboard |
 | `KEYSYNC_NETWORK` | no | `mainnet`, `hoodi`, etc. Default: `mainnet` |
-| `KEYSYNC_CHAIN_ID` | no | Corresponding chain ID string. Default: `0x1` |
+| `KEYSYNC_CHAIN_ID` | no | Corresponding chain ID, in `0x` hex (e.g. `0x88bb0` for Hoodi, `560048` in decimal). Default: `0x1` |
 | `KEYSYNC_BEACON_URL` | conditional | Required when using a pubkeys or index-list file |
 | `KEYSYNC_PUBKEYS_FILE` | conditional | One BLS pubkey per line; beacon resolves the index |
 | `KEYSYNC_INDEX_LIST_FILE` | conditional | One validator index per line; beacon resolves the pubkey |

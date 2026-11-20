@@ -24,6 +24,7 @@ from typing import Any, Self
 import httpx
 import tenacity
 
+from optimum_keysync.config import canonical_chain_id
 from optimum_keysync.logging import get_logger
 
 _LOG = get_logger(__name__)
@@ -119,7 +120,9 @@ class ApiClient:
                 out.append(
                     ValidatorAssignment(
                         validator_index=int(r["validator_index"]),
-                        chain_id=str(r["chain_id"]),
+                        # Normalize so a Console row returned as "1" (or 1)
+                        # still matches the desired "0x1" (issue #25).
+                        chain_id=canonical_chain_id(str(r["chain_id"])),
                         active=bool(r.get("active", True)),
                     )
                 )

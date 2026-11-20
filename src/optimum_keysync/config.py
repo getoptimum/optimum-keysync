@@ -29,6 +29,35 @@ _DEFAULT_NETWORK = "mainnet"
 _DEFAULT_CHAIN_ID = "0x1"
 
 
+def parse_chain_id(chain_id: str) -> int | None:
+    """Parse a chain_id (eth-style hex like `0x1`, or plain decimal) to an
+    int for comparison with the beacon's reported chain id. Returns None
+    when it can't be parsed, so the cross-check is skipped rather than
+    raising on an unusual-but-API-accepted value."""
+    s = chain_id.strip().lower()
+    try:
+        return int(s, 16) if s.startswith("0x") else int(s, 10)
+    except ValueError:
+        return None
+
+
+def canonical_chain_id(chain_id: str) -> str:
+    """Normalize a chain id to lowercase `0x` hex with no leading zeros
+    (`"1"` -> `"0x1"`, `"0X01"` -> `"0x1"`, `"17000"` -> `"0x4268"`).
+
+    Console rows, keysync's own default and the examples all use this form,
+    so normalizing at every ingestion point — the config, an indices file,
+    and the console's list response — makes the beacon cross-check and the
+    reconcile plan compare the same value. An unparseable value is returned
+    unchanged, keeping the cross-check's skip behaviour (see
+    `parse_chain_id`) instead of failing config on an unusual value.
+    """
+    value = parse_chain_id(chain_id)
+    if value is None or value < 0:
+        return chain_id
+    return f"0x{value:x}"
+
+
 def _require_https(name: str, url: str) -> None:
     """Reject plaintext URLs against non-loopback hosts at config time.
 
@@ -123,6 +152,14 @@ class KeysyncConfig(BaseModel):
         if isinstance(v, str) and v.strip() == "":
             return None
         return v
+
+    @field_validator("chain_id")
+    @classmethod
+    def _canonical_chain_id(cls, v: str) -> str:
+        # One canonical form for the whole run: a decimal "1" from the env
+        # var or flag must not disagree with the "0x1" Console rows (issue
+        # #25). Unparseable values pass through unchanged.
+        return canonical_chain_id(v)
 
     @field_validator("log_format")
     @classmethod

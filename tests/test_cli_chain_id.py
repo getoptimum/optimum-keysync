@@ -4,6 +4,7 @@ paired with the mainnet default, and a wrong beacon_url)."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -82,3 +83,70 @@ def test_diff_wrong_beacon_url_exits_beacon(tmp_path: Path) -> None:
     pubkeys.write_text("")
     result = CliRunner().invoke(main, ["diff", *_opts(pubkeys, "0x1")], catch_exceptions=False)
     assert result.exit_code == 6, result.output  # EXIT_BEACON
+
+
+@respx.mock
+def test_decimal_chain_id_is_the_same_chain(tmp_path: Path) -> None:
+    # Issue #25: --chain-id 1 passes the beacon cross-check (beacon reports
+    # chain "1") but Console lists the same validator under "0x1", so the
+    # plan used to churn it: assign under "1", unassign under "0x1".
+    pk = "0x" + "a1" * 48
+    respx.get("https://beacon.test/eth/v1/config/deposit_contract").mock(
+        return_value=httpx.Response(200, json={"data": {"chain_id": "1"}})
+    )
+    respx.get("https://beacon.test/eth/v1/beacon/states/head/validators").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"index": "720396", "status": "active_ongoing", "validator": {"pubkey": pk}}
+                ]
+            },
+        )
+    )
+    respx.get("https://api.test/api/v1/operators/42/validators").mock(
+        return_value=httpx.Response(
+            200,
+            json={"validators": [{"validator_index": 720396, "chain_id": "0x1", "active": True}]},
+        )
+    )
+    pubkeys = tmp_path / "p.txt"
+    pubkeys.write_text(pk + "\n")
+    result = CliRunner().invoke(main, ["diff", *_opts(pubkeys, "1")], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    # The console log line ("resolving pubkeys via beacon") precedes the
+    # JSON plan on stdout, so parse from the first "{".
+    plan = json.loads(result.output[result.output.index("{"):])
+    assert plan["to_assign"] == [] and plan["to_unassign"] == [], plan
+
+
+@respx.mock
+def test_decimal_console_row_matches_hex_config(tmp_path: Path) -> None:
+    # Issue #25, other direction: config is "0x1" but Console returns the
+    # row as decimal "1" — the plan must still be a no-op.
+    pk = "0x" + "a1" * 48
+    respx.get("https://beacon.test/eth/v1/config/deposit_contract").mock(
+        return_value=httpx.Response(200, json={"data": {"chain_id": "1"}})
+    )
+    respx.get("https://beacon.test/eth/v1/beacon/states/head/validators").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"index": "720396", "status": "active_ongoing", "validator": {"pubkey": pk}}
+                ]
+            },
+        )
+    )
+    respx.get("https://api.test/api/v1/operators/42/validators").mock(
+        return_value=httpx.Response(
+            200,
+            json={"validators": [{"validator_index": 720396, "chain_id": "1", "active": True}]},
+        )
+    )
+    pubkeys = tmp_path / "p.txt"
+    pubkeys.write_text(pk + "\n")
+    result = CliRunner().invoke(main, ["diff", *_opts(pubkeys, "0x1")], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    plan = json.loads(result.output[result.output.index("{"):])
+    assert plan["to_assign"] == [] and plan["to_unassign"] == [], plan
